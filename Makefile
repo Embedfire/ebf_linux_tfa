@@ -187,8 +187,48 @@ TF_CFLAGS_aarch64	+=	-mgeneral-regs-only -mstrict-align
 ASFLAGS_aarch32		=	$(march32-directive)
 ASFLAGS_aarch64		=	-march=armv8-a
 
+WARNING1 := -Wextra
+WARNING1 += -Wunused -Wno-unused-parameter
+WARNING1 += -Wmissing-declarations
+WARNING1 += -Wmissing-format-attribute
+WARNING1 += -Wmissing-prototypes
+WARNING1 += -Wold-style-definition
+WARNING1 += -Wunused-but-set-variable
+WARNING1 += -Wunused-const-variable
+
+WARNING2 := -Waggregate-return
+WARNING2 += -Wcast-align
+WARNING2 += -Wdisabled-optimization
+WARNING2 += -Wnested-externs
+WARNING2 += -Wshadow
+WARNING2 += -Wlogical-op
+WARNING2 += -Wmissing-field-initializers
+WARNING2 += -Wsign-compare
+WARNING2 += -Wmaybe-uninitialized
+
+WARNING3 := -Wbad-function-cast
+WARNING3 += -Wcast-qual
+WARNING3 += -Wconversion
+WARNING3 += -Wpacked
+WARNING3 += -Wpadded
+WARNING3 += -Wpointer-arith
+WARNING3 += -Wredundant-decls
+WARNING3 += -Wswitch-default
+WARNING3 += -Wpacked-bitfield-compat
+WARNING3 += -Wvla
+
+ifeq (${W},1)
+WARN_OR_ERROR := $(WARNING1)
+else ifeq (${W},2)
+WARN_OR_ERROR := $(WARNING1) $(WARNING2)
+else ifeq (${W},3)
+WARN_OR_ERROR := $(WARNING1) $(WARNING2) $(WARNING3)
+else
+WARN_OR_ERROR := -Werror
+endif
+
 CPPFLAGS		=	${DEFINES} ${INCLUDES} ${MBEDTLS_INC} -nostdinc		\
-				-Wmissing-include-dirs -Werror
+				-Wmissing-include-dirs $(WARN_OR_ERROR)
 ASFLAGS			+=	$(CPPFLAGS) $(ASFLAGS_$(ARCH))			\
 				-D__ASSEMBLY__ -ffreestanding 			\
 				-Wa,--fatal-warnings
@@ -396,12 +436,6 @@ ifeq ($(HW_ASSISTED_COHERENCY)-$(USE_COHERENT_MEM),1-1)
 $(error USE_COHERENT_MEM cannot be enabled with HW_ASSISTED_COHERENCY)
 endif
 
-ifneq ($(MULTI_CONSOLE_API), 0)
-    ifeq (${ARCH},aarch32)
-        $(error "Error: MULTI_CONSOLE_API is not supported for AArch32")
-    endif
-endif
-
 #For now, BL2_IN_XIP_MEM is only supported when BL2_AT_EL3 is 1.
 ifeq ($(BL2_AT_EL3)-$(BL2_IN_XIP_MEM),0-1)
 $(error "BL2_IN_XIP_MEM is only supported when BL2_AT_EL3 is enabled")
@@ -592,6 +626,7 @@ $(eval $(call assert_boolean,USE_TBBR_DEFS))
 $(eval $(call assert_boolean,WARMBOOT_ENABLE_DCACHE_EARLY))
 $(eval $(call assert_boolean,BL2_AT_EL3))
 $(eval $(call assert_boolean,BL2_IN_XIP_MEM))
+$(eval $(call assert_boolean,AARCH32_EXCEPTION_DEBUG))
 
 $(eval $(call assert_numeric,ARM_ARCH_MAJOR))
 $(eval $(call assert_numeric,ARM_ARCH_MINOR))
@@ -644,6 +679,7 @@ $(eval $(call add_define,USE_TBBR_DEFS))
 $(eval $(call add_define,WARMBOOT_ENABLE_DCACHE_EARLY))
 $(eval $(call add_define,BL2_AT_EL3))
 $(eval $(call add_define,BL2_IN_XIP_MEM))
+$(eval $(call add_define,AARCH32_EXCEPTION_DEBUG))
 
 # Define the EL3_PAYLOAD_BASE flag only if it is provided.
 ifdef EL3_PAYLOAD_BASE
@@ -784,9 +820,11 @@ checkpatch:		locate-checkpatch
 	for commit in `git rev-list $$COMMON_COMMIT..HEAD`; do		\
 		printf "\n[*] Checking style of '$$commit'\n\n";	\
 		git log --format=email "$$commit~..$$commit"		\
-			-- ${CHECK_PATHS} | ${CHECKPATCH} - || true;	\
+			-- ${CHECK_PATHS} | ${CHECKPATCH} --strict - || \
+			true;						\
 		git diff --format=email "$$commit~..$$commit"		\
-			-- ${CHECK_PATHS} | ${CHECKPATCH} - || true;	\
+			-- ${CHECK_PATHS} | ${CHECKPATCH} --strict - || \
+			true;						\
 	done
 
 certtool: ${CRTTOOL}

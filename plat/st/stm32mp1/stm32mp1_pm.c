@@ -7,7 +7,9 @@
 #include <arch_helpers.h>
 #include <assert.h>
 #include <boot_api.h>
+#include <bsec.h>
 #include <debug.h>
+#include <delay_timer.h>
 #include <dt-bindings/clock/stm32mp1-clks.h>
 #include <errno.h>
 #include <gic_common.h>
@@ -16,14 +18,16 @@
 #include <platform_def.h>
 #include <platform.h>
 #include <psci.h>
-#include <stm32mp1_clk.h>
+#include <stm32mp_common.h>
+#include <stm32mp1_low_power.h>
+#include <stm32mp1_power_config.h>
 #include <stm32mp1_private.h>
 #include <stm32mp1_rcc.h>
+#include <stm32mp1_shared_resources.h>
 
-static uint32_t stm32_sec_entrypoint;
+static uintptr_t stm32_sec_entrypoint;
 static uint32_t cntfrq_core0;
-
-#define SEND_SECURE_IT_TO_CORE_1	0x20000U
+static uintptr_t saved_entrypoint;
 
 /*******************************************************************************
  * STM32MP1 handler called when a CPU is about to enter standby.
@@ -39,6 +43,7 @@ static void stm32_cpu_standby(plat_local_state_t cpu_state)
 	 * Enter standby state
 	 * dsb is good practice before using wfi to enter low power states
 	 */
+	isb();
 	dsb();
 	while (interrupt == GIC_SPURIOUS_INTERRUPT) {
 		wfi();
@@ -56,33 +61,43 @@ static void stm32_cpu_standby(plat_local_state_t cpu_state)
 /*******************************************************************************
  * STM32MP1 handler called when a power domain is about to be turned on. The
  * mpidr determines the CPU to be turned on.
- * call by core  0 to activate core 1
+ * call by core 0 to activate core 1
  ******************************************************************************/
 static int stm32_pwr_domain_on(u_register_t mpidr)
 {
 	unsigned long current_cpu_mpidr = read_mpidr_el1();
-	uint32_t tamp_clk_off = 0;
 	uint32_t bkpr_core1_addr =
 		tamp_bkpr(BOOT_API_CORE1_BRANCH_ADDRESS_TAMP_BCK_REG_IDX);
 	uint32_t bkpr_core1_magic =
 		tamp_bkpr(BOOT_API_CORE1_MAGIC_NUMBER_TAMP_BCK_REG_IDX);
+	int result;
+
+	result = stm32mp_is_single_core();
+	if (result < 0) {
+		return PSCI_E_INTERN_FAIL;
+	}
+
+	if (result == 1) {
+		return PSCI_E_INTERN_FAIL;
+	}
 
 	if (mpidr == current_cpu_mpidr) {
 		return PSCI_E_INVALID_PARAMS;
 	}
 
-	if ((stm32_sec_entrypoint < STM32MP1_SRAM_BASE) ||
-	    (stm32_sec_entrypoint > (STM32MP1_SRAM_BASE +
-				     (STM32MP1_SRAM_SIZE - 1)))) {
+	/* Need to send additional IT 0 after individual core 1 reset */
+	gicv2_raise_sgi(ARM_IRQ_NON_SEC_SGI_0, STM32MP_SECONDARY_CPU);
+
+	/* Wait for this IT to be acknowledged by ROM code. */
+	udelay(10);
+
+	if ((stm32_sec_entrypoint < STM32MP_SYSRAM_BASE) ||
+	    (stm32_sec_entrypoint > (STM32MP_SYSRAM_BASE +
+				     (STM32MP_SYSRAM_SIZE - 1)))) {
 		return PSCI_E_INVALID_ADDRESS;
 	}
 
-	if (!stm32mp1_clk_is_enabled(RTCAPB)) {
-		tamp_clk_off = 1;
-		if (stm32mp1_clk_enable(RTCAPB) != 0) {
-			panic();
-		}
-	}
+	stm32mp_clk_enable(RTCAPB);
 
 	cntfrq_core0 = read_cntfrq_el0();
 
@@ -92,15 +107,10 @@ static int stm32_pwr_domain_on(u_register_t mpidr)
 	/* Write magic number in backup register */
 	mmio_write_32(bkpr_core1_magic, BOOT_API_A7_CORE1_MAGIC_NUMBER);
 
-	if (tamp_clk_off != 0U) {
-		if (stm32mp1_clk_disable(RTCAPB) != 0) {
-			panic();
-		}
-	}
+	stm32mp_clk_disable(RTCAPB);
 
 	/* Generate an IT to core 1 */
-	mmio_write_32(STM32MP1_GICD_BASE + GICD_SGIR,
-		      SEND_SECURE_IT_TO_CORE_1 | ARM_IRQ_SEC_SGI_0);
+	gicv2_raise_sgi(ARM_IRQ_SEC_SGI_0, STM32MP_SECONDARY_CPU);
 
 	return PSCI_E_SUCCESS;
 }
@@ -120,7 +130,9 @@ static void stm32_pwr_domain_off(const psci_power_state_t *target_state)
  ******************************************************************************/
 static void stm32_pwr_domain_suspend(const psci_power_state_t *target_state)
 {
-	/* Nothing to do, power domain is not disabled */
+	uint32_t soc_mode = stm32mp1_get_lp_soc_mode(PSCI_MODE_SYSTEM_SUSPEND);
+
+	stm32_enter_low_power(soc_mode, saved_entrypoint);
 }
 
 /*******************************************************************************
@@ -147,22 +159,63 @@ static void stm32_pwr_domain_suspend_finish(const psci_power_state_t
 	/* Nothing to do, power domain is not disabled */
 }
 
+/*******************************************************************************
+ * STM32MP1 handler called when a core tries to power itself down. If this
+ * call is made by core 0, it is a return from stop mode. In this case, we
+ * should restore previous context and jump to secure entrypoint.
+ ******************************************************************************/
 static void __dead2 stm32_pwr_domain_pwr_down_wfi(const psci_power_state_t
 						  *target_state)
 {
-	ERROR("stm32mpu1 Power Down WFI: operation not handled.\n");
+	if (MPIDR_AFFLVL0_VAL(read_mpidr_el1()) == STM32MP_PRIMARY_CPU) {
+		void (*warm_entrypoint)(void) =
+			(void (*)(void))stm32_sec_entrypoint;
+
+		stm32_pwr_down_wfi();
+
+		stm32_exit_cstop();
+
+		disable_mmu_icache_secure();
+
+		warm_entrypoint();
+	}
+
+	mmio_write_32(stm32mp_rcc_base() + RCC_MP_GRSTCSETR,
+		      RCC_MP_GRSTCSETR_MPUP1RST);
+
+	/* wfi is required for an auto-reset */
+	isb();
+	dsb();
+	wfi();
+
+	/* This shouldn't be reached */
 	panic();
 }
 
 static void __dead2 stm32_system_off(void)
 {
-	ERROR("stm32mpu1 System Off: operation not handled.\n");
+	uint32_t soc_mode = stm32mp1_get_lp_soc_mode(PSCI_MODE_SYSTEM_OFF);
+
+	if (stm32mp_is_single_core() == 0) {
+		/* Prepare Core 1 reset */
+		mmio_setbits_32(stm32mp_rcc_base() + RCC_MP_GRSTCSETR,
+				RCC_MP_GRSTCSETR_MPUP1RST);
+		/* Send IT to core 1 to put itself in WFI */
+		gicv2_raise_sgi(ARM_IRQ_SEC_SGI_1, STM32MP_SECONDARY_CPU);
+	}
+
+	stm32_enter_low_power(soc_mode, 0);
+
+	stm32_pwr_down_wfi();
+
+	/* This shouldn't be reached */
 	panic();
 }
 
 static void __dead2 stm32_system_reset(void)
 {
-	mmio_setbits_32(RCC_BASE + RCC_MP_GRSTCSETR, RCC_MP_GRSTCSETR_MPSYSRST);
+	mmio_setbits_32(stm32mp_rcc_base() + RCC_MP_GRSTCSETR,
+			RCC_MP_GRSTCSETR_MPSYSRST);
 
 	/* Loop in case system reset is not immediately caught */
 	for ( ; ; ) {
@@ -196,9 +249,11 @@ static int stm32_validate_power_state(unsigned int power_state,
 static int stm32_validate_ns_entrypoint(uintptr_t entrypoint)
 {
 	/* The non-secure entry point must be in DDR */
-	if (entrypoint < STM32MP1_DDR_BASE) {
+	if (entrypoint < STM32MP_DDR_BASE) {
 		return PSCI_E_INVALID_ADDRESS;
 	}
+
+	saved_entrypoint = entrypoint;
 
 	return PSCI_E_SUCCESS;
 }
@@ -223,6 +278,12 @@ static int stm32_node_hw_state(u_register_t target_cpu,
 	return (int)HW_ON;
 }
 
+static void stm32_get_sys_suspend_power_state(psci_power_state_t *req_state)
+{
+	req_state->pwr_domain_state[0] = ARM_LOCAL_STATE_OFF;
+	req_state->pwr_domain_state[1] = ARM_LOCAL_STATE_OFF;
+}
+
 /*******************************************************************************
  * Export the platform handlers. The ARM Standard platform layer will take care
  * of registering the handlers with PSCI.
@@ -239,7 +300,8 @@ static const plat_psci_ops_t stm32_psci_ops = {
 	.system_reset = stm32_system_reset,
 	.validate_power_state = stm32_validate_power_state,
 	.validate_ns_entrypoint = stm32_validate_ns_entrypoint,
-	.get_node_hw_state = stm32_node_hw_state
+	.get_node_hw_state = stm32_node_hw_state,
+	.get_sys_suspend_power_state = stm32_get_sys_suspend_power_state,
 };
 
 /*******************************************************************************

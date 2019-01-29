@@ -8,9 +8,16 @@
 #include <asm_macros.S>
 
 	.weak	plat_report_exception
+#if AARCH32_EXCEPTION_DEBUG
+	.weak	plat_report_undef_inst
+	.weak	plat_report_prefetch_abort
+	.weak	plat_report_data_abort
+#endif
+#if !ERROR_DEPRECATED
 	.weak	plat_crash_console_init
 	.weak	plat_crash_console_putc
 	.weak	plat_crash_console_flush
+#endif
 	.weak	plat_reset_handler
 	.weak	plat_disable_acp
 	.weak	bl1_plat_prepare_exit
@@ -26,6 +33,36 @@ func plat_report_exception
 	bx	lr
 endfunc plat_report_exception
 
+#if AARCH32_EXCEPTION_DEBUG
+	/* -----------------------------------------------------
+	 * Placeholder function which should be redefined by
+	 * each platform.
+	 * -----------------------------------------------------
+	 */
+func plat_report_undef_inst
+	bx	lr
+endfunc plat_report_undef_inst
+
+	/* -----------------------------------------------------
+	 * Placeholder function which should be redefined by
+	 * each platform.
+	 * -----------------------------------------------------
+	 */
+func plat_report_prefetch_abort
+	bx	lr
+endfunc plat_report_prefetch_abort
+
+	/* -----------------------------------------------------
+	 * Placeholder function which should be redefined by
+	 * each platform.
+	 * -----------------------------------------------------
+	 */
+func plat_report_data_abort
+	bx	lr
+endfunc plat_report_data_abort
+#endif
+
+#if !ERROR_DEPRECATED
 	/* -----------------------------------------------------
 	 * Placeholder function which should be redefined by
 	 * each platform.
@@ -54,6 +91,7 @@ func plat_crash_console_flush
 	mov	r0, #0
 	bx	lr
 endfunc plat_crash_console_flush
+#endif
 
 	/* -----------------------------------------------------
 	 * Placeholder function which should be redefined by

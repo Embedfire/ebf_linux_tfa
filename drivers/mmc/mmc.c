@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -246,6 +246,13 @@ static int mmc_fill_device_info(void)
 			return ret;
 		}
 
+		do {
+			ret = mmc_device_state();
+			if (ret < 0) {
+				return ret;
+			}
+		} while (ret != MMC_STATE_TRAN);
+
 		nb_blocks = (mmc_ext_csd[CMD_EXTCSD_SEC_CNT] << 0) |
 			    (mmc_ext_csd[CMD_EXTCSD_SEC_CNT + 1] << 8) |
 			    (mmc_ext_csd[CMD_EXTCSD_SEC_CNT + 2] << 16) |
@@ -292,7 +299,7 @@ static int mmc_fill_device_info(void)
 		break;
 	}
 
-	if (ret != 0) {
+	if (ret < 0) {
 		return ret;
 	}
 
@@ -379,7 +386,10 @@ static int mmc_send_op_cond(void)
 	int ret, n;
 	unsigned int resp_data[4];
 
-	mmc_reset_to_idle();
+	ret = mmc_reset_to_idle();
+	if (ret != 0) {
+		return ret;
+	};
 
 	for (n = 0; n < SEND_OP_COND_MAX_RETRIES; n++) {
 		ret = mmc_send_cmd(MMC_CMD(1), OCR_SECTOR_MODE |
@@ -394,7 +404,7 @@ static int mmc_send_op_cond(void)
 			return 0;
 		}
 
-		mdelay(1);
+		mdelay(10);
 	}
 
 	ERROR("CMD1 failed after %d retries\n", SEND_OP_COND_MAX_RETRIES);
@@ -409,7 +419,10 @@ static int mmc_enumerate(unsigned int clk, unsigned int bus_width)
 
 	ops->init();
 
-	mmc_reset_to_idle();
+	ret = mmc_reset_to_idle();
+	if (ret != 0) {
+		return ret;
+	};
 
 	if (mmc_dev_info->mmc_dev_type == MMC_IS_EMMC) {
 		ret = mmc_send_op_cond();

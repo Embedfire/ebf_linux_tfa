@@ -69,15 +69,15 @@ struct entry_point_info *bl2_load_images(void)
 				ERROR("BL2: Failed to load image (%i)\n", err);
 				plat_error_handler(err);
 			}
+
+			/* Allow platform to handle image information. */
+			err = bl2_plat_handle_post_image_load(bl2_node_info->image_id);
+			if (err) {
+				ERROR("BL2: Failure in post image load handling (%i)\n", err);
+				plat_error_handler(err);
+			}
 		} else {
 			INFO("BL2: Skip loading image id %d\n", bl2_node_info->image_id);
-		}
-
-		/* Allow platform to handle image information. */
-		err = bl2_plat_handle_post_image_load(bl2_node_info->image_id);
-		if (err) {
-			ERROR("BL2: Failure in post image load handling (%i)\n", err);
-			plat_error_handler(err);
 		}
 
 		/* Go to next image */

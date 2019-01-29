@@ -12,10 +12,19 @@
 
 vector_base bl2_vector_table
 	b	bl2_entrypoint
+#if AARCH32_EXCEPTION_DEBUG
+	b	report_undef_inst	/* Undef */
+#else
 	b	report_exception	/* Undef */
+#endif
 	b	report_exception	/* SVC call */
+#if AARCH32_EXCEPTION_DEBUG
+	b	report_prefetch_abort	/* Prefetch abort */
+	b	report_data_abort	/* Data abort */
+#else
 	b	report_exception	/* Prefetch abort */
 	b	report_exception	/* Data abort */
+#endif
 	b	report_exception	/* Reserved */
 	b	report_exception	/* IRQ */
 	b	report_exception	/* FIQ */

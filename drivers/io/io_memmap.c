@@ -40,7 +40,7 @@ static int memmap_dev_open(const uintptr_t dev_spec, io_dev_info_t **dev_info);
 static int memmap_block_open(io_dev_info_t *dev_info, const uintptr_t spec,
 			     io_entity_t *entity);
 static int memmap_block_seek(io_entity_t *entity, int mode,
-			     ssize_t offset);
+			     signed long long offset);
 static int memmap_block_len(io_entity_t *entity, size_t *length);
 static int memmap_block_read(io_entity_t *entity, uintptr_t buffer,
 			     size_t length, size_t *length_read);
@@ -127,7 +127,8 @@ static int memmap_block_open(io_dev_info_t *dev_info, const uintptr_t spec,
 
 
 /* Seek to a particular file offset on the memmap device */
-static int memmap_block_seek(io_entity_t *entity, int mode, ssize_t offset)
+static int memmap_block_seek(io_entity_t *entity, int mode,
+			     signed long long offset)
 {
 	int result = -ENOENT;
 	file_state_t *fp;

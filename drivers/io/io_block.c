@@ -27,7 +27,7 @@ io_type_t device_type_block(void);
 
 static int block_open(io_dev_info_t *dev_info, const uintptr_t spec,
 		      io_entity_t *entity);
-static int block_seek(io_entity_t *entity, int mode, ssize_t offset);
+static int block_seek(io_entity_t *entity, int mode, signed long long offset);
 static int block_read(io_entity_t *entity, uintptr_t buffer, size_t length,
 		      size_t *length_read);
 static int block_write(io_entity_t *entity, const uintptr_t buffer,
@@ -67,8 +67,10 @@ io_type_t device_type_block(void)
 static int find_first_block_state(const io_block_dev_spec_t *dev_spec,
 				  unsigned int *index_out)
 {
+	unsigned int index;
 	int result = -ENOENT;
-	for (int index = 0; index < MAX_IO_BLOCK_DEVICES; ++index) {
+
+	for (index = 0U; index < MAX_IO_BLOCK_DEVICES; ++index) {
 		/* dev_spec is used as identifier since it's unique */
 		if (state_pool[index].dev_spec == dev_spec) {
 			result = 0;
@@ -144,7 +146,7 @@ static int block_open(io_dev_info_t *dev_info, const uintptr_t spec,
 }
 
 /* parameter offset is relative address at here */
-static int block_seek(io_entity_t *entity, int mode, ssize_t offset)
+static int block_seek(io_entity_t *entity, int mode, signed long long offset)
 {
 	block_dev_state_t *cur;
 

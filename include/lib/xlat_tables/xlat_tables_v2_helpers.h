@@ -120,6 +120,37 @@ struct xlat_ctx {
 	/* do nothing */
 #endif /* PLAT_XLAT_TABLES_DYNAMIC */
 
+#ifdef PLAT_XLAT_BASE
+#define tf_xlat_tables		(void *)PLAT_XLAT_BASE
+
+#define XLAT_TABLES(_ctx_name, _xlat_tables_count, _section_name)		\
+	CASSERT(!(PLAT_XLAT_BASE & (XLAT_TABLE_SIZE - 1)),			\
+			invalid_plat_xlat_base);				\
+	CASSERT(PLAT_XLAT_SIZE >= (sizeof(uint64_t) *				\
+			XLAT_TABLE_ENTRIES * _xlat_tables_count),		\
+			invalid_plat_xlat_size);
+
+#else
+#define XLAT_TABLES(_ctx_name, _xlat_tables_count, _section_name)			\
+	static uint64_t _ctx_name##_xlat_tables[_xlat_tables_count][XLAT_TABLE_ENTRIES]	\
+		__aligned(XLAT_TABLE_SIZE) __section(_section_name);
+#endif
+
+#ifdef PLAT_BASE_XLAT_BASE
+#define tf_base_xlat_table	(void *)PLAT_BASE_XLAT_BASE
+
+#define BASE_XLAT_TABLE(_ctx_name, _virt_addr_space_size)			\
+	CASSERT(!(PLAT_BASE_XLAT_BASE &						\
+			((GET_NUM_BASE_LEVEL_ENTRIES(_virt_addr_space_size) *	\
+			sizeof(uint64_t)) - 1)), invalid_plat_base_xlat_cfg);
+#else
+#define BASE_XLAT_TABLE(_ctx_name, _virt_addr_space_size)			\
+	static uint64_t _ctx_name##_base_xlat_table				\
+		[GET_NUM_BASE_LEVEL_ENTRIES(_virt_addr_space_size)]		\
+		__aligned(GET_NUM_BASE_LEVEL_ENTRIES(_virt_addr_space_size) *	\
+			  sizeof(uint64_t));
+#endif
+
 #define REGISTER_XLAT_CONTEXT_FULL_SPEC(_ctx_name, _mmap_count,		\
 			_xlat_tables_count, _virt_addr_space_size,	\
 			_phy_addr_space_size, _xlat_regime, _section_name)\
@@ -131,14 +162,8 @@ struct xlat_ctx {
 									\
 	static mmap_region_t _ctx_name##_mmap[_mmap_count + 1];		\
 									\
-	static uint64_t _ctx_name##_xlat_tables[_xlat_tables_count]	\
-		[XLAT_TABLE_ENTRIES]					\
-		__aligned(XLAT_TABLE_SIZE) __section(_section_name);	\
-									\
-	static uint64_t _ctx_name##_base_xlat_table			\
-		[GET_NUM_BASE_LEVEL_ENTRIES(_virt_addr_space_size)]	\
-		__aligned(GET_NUM_BASE_LEVEL_ENTRIES(_virt_addr_space_size)\
-			* sizeof(uint64_t));				\
+	XLAT_TABLES(_ctx_name, _xlat_tables_count, _section_name)	\
+	BASE_XLAT_TABLE(_ctx_name, _virt_addr_space_size)		\
 									\
 	XLAT_ALLOC_DYNMAP_STRUCT(_ctx_name, _xlat_tables_count)		\
 									\

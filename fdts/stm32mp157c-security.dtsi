@@ -1,0 +1,71 @@
+/*
+ * Copyright : STMicroelectronics 2017
+ *
+ * SPDX-License-Identifier:	GPL-2.0+	BSD-3-Clause
+ */
+
+#include <dt-bindings/soc/st,stm32-etzpc.h>
+
+/ {
+	soc {
+		iwdg1: iwdg@5C003000 {
+			compatible = "st,stm32mp1-iwdg";
+			reg = <0x5C003000 0x400>;
+			clocks = <&rcc IWDG1>, <&rcc CK_LSI>;
+			clock-names = "pclk", "lsi";
+			interrupts = <GIC_SPI 150 IRQ_TYPE_LEVEL_HIGH>;
+			status = "disabled";
+			secure-status = "disabled";
+		};
+
+		etzpc: etzpc@5C007000 {
+			compatible = "st,stm32-etzpc";
+			reg = <0x5C007000 0x400>;
+			clocks = <&rcc TZPC>;
+			status = "disabled";
+			secure-status = "okay";
+		};
+
+		stgen: stgen@5C008000 {
+			compatible = "st,stm32-stgen";
+			reg = <0x5C008000 0x1000>;
+		};
+	};
+};
+
+&bsec {
+	mac_addr: mac_addr@e4 {
+		reg = <0xe4 0x6>;
+	};
+	/* Spare field to align on 32-bit OTP granularity  */
+	spare_ns_ea: spare_ns_ea@ea {
+		reg = <0xea 0x2>;
+	};
+	board_id: board_id@ec {
+		reg = <0xec 0x4>;
+	};
+};
+
+&iwdg2 {
+	secure-interrupts = <GIC_SPI 151 IRQ_TYPE_LEVEL_HIGH>;
+};
+
+&rcc {
+	secure-interrupts = <GIC_SPI 145 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "wakeup";
+};
+
+&sdmmc1 {
+	compatible = "st,stm32-sdmmc2";
+};
+
+&sdmmc2 {
+	compatible = "st,stm32-sdmmc2";
+};
+
+&tamp {
+	compatible = "st,stm32-tamp";
+	clocks = <&rcc RTCAPB>;
+	interrupts = <GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>;
+	secure-status= "disabled";
+};

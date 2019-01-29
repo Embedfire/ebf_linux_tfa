@@ -1,22 +1,38 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#ifndef __STM32MP1_PRIVATE_H__
-#define __STM32MP1_PRIVATE_H__
+#ifndef STM32MP1_PRIVATE_H
+#define STM32MP1_PRIVATE_H
 
-void stm32mp1_io_setup(void);
+#include <bl_common.h>
+#include <boot_api.h>
+#include <stdbool.h>
+
+enum boot_device_e {
+	BOOT_DEVICE_USB,
+	BOOT_DEVICE_BOARD
+};
+
 void configure_mmu(void);
 
 void stm32mp1_arch_security_setup(void);
 void stm32mp1_security_setup(void);
+void stm32mp1_sp_min_security_setup(void);
 
-void stm32mp1_save_boot_ctx_address(uintptr_t address);
-uintptr_t stm32mp1_get_boot_ctx_address(void);
+enum boot_device_e get_boot_device(void);
+
+#if STM32MP_UART_PROGRAMMER
+uintptr_t get_uart_address(uint32_t instance_nb);
+#endif
 
 void stm32mp1_gic_pcpu_init(void);
 void stm32mp1_gic_init(void);
 
-#endif /* __STM32MP1_PRIVATE_H__ */
+enum etzpc_decprot_attributes stm32mp_etzpc_binding2decprot(uint32_t mode);
+
+void stm32mp1_syscfg_init(void);
+
+#endif /* STM32MP1_PRIVATE_H */

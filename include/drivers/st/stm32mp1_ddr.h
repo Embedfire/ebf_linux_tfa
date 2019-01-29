@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
  */
 
-#ifndef _STM32MP1_DDR_H
-#define _STM32MP1_DDR_H
+#ifndef STM32MP1_DDR_H
+#define STM32MP1_DDR_H
 
 #include <stdbool.h>
 
@@ -152,7 +152,7 @@ struct stm32mp1_ddrphy_cal {
 
 struct stm32mp1_ddr_info {
 	const char *name;
-	uint16_t speed; /* in MHZ */
+	uint32_t speed; /* in kHZ */
 	uint32_t size;  /* Memory size in byte = col * row * width */
 };
 
@@ -165,9 +165,12 @@ struct stm32mp1_ddr_config {
 	struct stm32mp1_ddrphy_reg p_reg;
 	struct stm32mp1_ddrphy_timing p_timing;
 	struct stm32mp1_ddrphy_cal p_cal;
+	bool self_refresh;
+	uint32_t zdata;
 };
 
-int stm32mp1_ddr_clk_enable(struct ddr_info *priv, uint16_t mem_speed);
+int stm32mp1_ddr_clk_enable(struct ddr_info *priv, uint32_t mem_speed);
 void stm32mp1_ddr_init(struct ddr_info *priv,
 		       struct stm32mp1_ddr_config *config);
-#endif /* _STM32MP1_DDR_H */
+
+#endif /* STM32MP1_DDR_H */

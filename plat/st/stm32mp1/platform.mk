@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -8,24 +8,78 @@ ARM_CORTEX_A7		:=	yes
 ARM_WITH_NEON		:=	yes
 BL2_AT_EL3		:=	1
 USE_COHERENT_MEM	:=	0
+MULTI_CONSOLE_API	:=	1
 
+# Please don't increment this value without good understanding of
+# the monotonic counter
 STM32_TF_VERSION	?=	0
+$(eval $(call add_define_val,STM32_TF_VERSION,${STM32_TF_VERSION}))
+
+# Enable software PMIC programming in case of debug purpose
+STM32MP1_DEBUG_ENABLE	?=	1
+$(eval $(call add_define_val,STM32MP1_DEBUG_ENABLE,${STM32MP1_DEBUG_ENABLE}))
 
 # Not needed for Cortex-A7
 WORKAROUND_CVE_2017_5715:=	0
 
-PLAT_INCLUDES		:=	-Iplat/st/stm32mp1/include/
-PLAT_INCLUDES		+=	-Iinclude/common/tbbr
+# Specific modification for reset halt workaround
+STM32MP1_RESET_HALT_WORKAROUND 	?= 	1
+$(eval $(call add_define,STM32MP1_RESET_HALT_WORKAROUND))
+
+AARCH32_EXCEPTION_DEBUG	:=	1
+
+ifeq ($(AARCH32_SP),optee)
+$(eval $(call add_define,AARCH32_SP_OPTEE))
+endif
+
+# Number of TF-A copies in the device
+STM32_TF_A_COPIES		:=	2
+$(eval $(call add_define,STM32_TF_A_COPIES))
+ifeq ($(AARCH32_SP),optee)
+PLAT_PARTITION_MAX_ENTRIES	:=	$(shell echo $$(($(STM32_TF_A_COPIES) + 4)))
+else
+PLAT_PARTITION_MAX_ENTRIES	:=	$(shell echo $$(($(STM32_TF_A_COPIES) + 1)))
+endif
+$(eval $(call add_define,PLAT_PARTITION_MAX_ENTRIES))
+
+# Boot devices
+STM32MP1_QSPI_NOR	:=	1
+$(eval $(call add_define,STM32MP1_QSPI_NOR))
+STM32MP_FMC_NAND	:=	1
+$(eval $(call add_define,STM32MP_FMC_NAND))
+STM32MP_EMMC		:=	1
+$(eval $(call add_define,STM32MP_EMMC))
+STM32MP_SDMMC		:=	1
+$(eval $(call add_define,STM32MP_SDMMC))
+STM32MP1_QSPI_NAND	:=	1
+$(eval $(call add_define,STM32MP1_QSPI_NAND))
+
+ifeq ($(filter 1,${STM32MP1_QSPI_NOR} ${STM32MP_FMC_NAND} ${STM32MP_EMMC} ${STM32MP_SDMMC}),)
+$(error "No boot device driver is enabled")
+endif
+
+STM32MP_UART_PROGRAMMER	:=	1
+$(eval $(call add_define,STM32MP_UART_PROGRAMMER))
+
+PLAT_INCLUDES		:=	-Iinclude/common/tbbr
+PLAT_INCLUDES		+=	-Iinclude/drivers/partition
 PLAT_INCLUDES		+=	-Iinclude/drivers/st
+PLAT_INCLUDES		+=	-Iplat/st/common/include/
+PLAT_INCLUDES		+=	-Iplat/st/stm32mp1/include/
+
+PLAT_INCLUDES		+=	-Iinclude/lib/usb
+
+STM32MP_USB		:=	1
 
 # Device tree
-STM32_DTB_FILE_NAME	?=	stm32mp157c-ev1.dtb
-FDT_SOURCES		:=	$(addprefix fdts/, $(patsubst %.dtb,%.dts,$(STM32_DTB_FILE_NAME)))
+DTB_FILE_NAME		?=	stm32mp157c-ev1.dtb
+FDT_SOURCES		:=	$(addprefix fdts/, $(patsubst %.dtb,%.dts,$(DTB_FILE_NAME)))
 DTC_FLAGS		+=	-Wno-unit_address_vs_reg
 
 include lib/libfdt/libfdt.mk
 
-PLAT_BL_COMMON_SOURCES	:=	plat/st/stm32mp1/stm32mp1_common.c
+PLAT_BL_COMMON_SOURCES	:=	plat/st/common/stm32mp_common.c				\
+				plat/st/stm32mp1/stm32mp1_private.c
 
 PLAT_BL_COMMON_SOURCES	+=	drivers/console/aarch32/console.S			\
 				drivers/st/uart/aarch32/stm32_console.S
@@ -43,23 +97,56 @@ PLAT_BL_COMMON_SOURCES	+=	${LIBFDT_SRCS}						\
 				drivers/arm/tzc/tzc400.c				\
 				drivers/delay_timer/delay_timer.c			\
 				drivers/delay_timer/generic_delay_timer.c		\
+				drivers/st/bsec/bsec.c					\
+				drivers/st/clk/stm32mp_clkfunc.c			\
 				drivers/st/clk/stm32mp1_clk.c				\
 				drivers/st/clk/stm32mp1_clkfunc.c			\
 				drivers/st/ddr/stm32mp1_ddr_helpers.c			\
 				drivers/st/gpio/stm32_gpio.c				\
-				drivers/st/pmic/stm32_i2c.c				\
-				drivers/st/pmic/stm32mp1_pmic.c				\
-				drivers/st/pmic/stpmu1.c				\
+				drivers/st/i2c/stm32_i2c.c				\
+				drivers/st/iwdg/stm32_iwdg.c				\
+				drivers/st/pmic/stm32mp_pmic.c				\
+				drivers/st/pmic/stpmic1.c				\
 				drivers/st/reset/stm32mp1_reset.c			\
+				plat/st/common/stm32mp_dt.c				\
+				plat/st/common/stm32mp_shres_helpers.c			\
 				plat/st/stm32mp1/stm32mp1_context.c			\
-				plat/st/stm32mp1/stm32mp1_dt.c				\
+				plat/st/stm32mp1/stm32mp1_dbgmcu.c			\
 				plat/st/stm32mp1/stm32mp1_helper.S			\
-				plat/st/stm32mp1/stm32mp1_security.c
+				plat/st/stm32mp1/stm32mp1_security.c			\
+				plat/st/stm32mp1/stm32mp1_shared_resources.c
 
-BL2_SOURCES		+=	drivers/io/io_dummy.c					\
+BL2_SOURCES		+=	drivers/io/io_block.c					\
+				drivers/io/io_dummy.c					\
 				drivers/io/io_storage.c					\
-				plat/st/stm32mp1/bl2_io_storage.c			\
-				plat/st/stm32mp1/bl2_plat_setup.c
+				drivers/st/hash/hash_sec.c				\
+				drivers/st/io/io_stm32image.c				\
+				plat/st/common/bl2_io_storage.c				\
+				plat/st/common/stm32mp_auth.c				\
+				plat/st/stm32mp1/bl2_plat_setup.c 			\
+				plat/st/stm32mp1/stm32mp1_syscfg.c
+
+ifeq (${STM32MP1_QSPI_NOR},1)
+BL2_SOURCES		+=	drivers/st/qspi/io_qspi.c
+endif
+
+ifeq (${STM32MP_FMC_NAND},1)
+BL2_SOURCES		+=	drivers/st/nand/io_nand.c				\
+				drivers/st/nand/nand.c
+endif
+
+ifneq ($(filter 1,${STM32MP_EMMC} ${STM32MP_SDMMC}),)
+BL2_SOURCES		+=	drivers/mmc/mmc.c					\
+				drivers/partition/gpt.c					\
+				drivers/partition/partition.c				\
+				drivers/st/io/io_mmc.c					\
+				drivers/st/mmc/stm32_sdmmc2.c
+endif
+
+ifeq (${STM32MP_UART_PROGRAMMER},1)
+BL2_SOURCES		+=	drivers/st/uart/io_programmer_uart.c			\
+				drivers/st/uart/stm32mp1xx_hal_uart.c
+endif
 
 BL2_SOURCES		+=	drivers/st/ddr/stm32mp1_ddr.c				\
 				drivers/st/ddr/stm32mp1_ram.c
@@ -68,19 +155,36 @@ BL2_SOURCES		+=	common/desc_image_load.c				\
 				plat/st/stm32mp1/plat_bl2_mem_params_desc.c		\
 				plat/st/stm32mp1/plat_image_load.c
 
-# For memory footprint optimization, build with thumb and interwork support
-ASFLAGS			+=	-mthumb -mthumb-interwork
-TF_CFLAGS		+=	-mthumb -mthumb-interwork
+ifneq (${STM32MP_USB},0)
+BL2_SOURCES		+=	drivers/st/io/io_programmer_st_usb.c			\
+				drivers/st/usb_dwc2/usb_dwc2.c				\
+				lib/usb/usb_core.c					\
+				lib/usb/usb_st_dfu.c					\
+				plat/st/stm32mp1/stm32mp1_usb_desc.c
+
+TF_CFLAGS		+=	-DSTM32MP_USB
+endif
+
+ifeq ($(AARCH32_SP),optee)
+BL2_SOURCES		+=	lib/optee/optee_utils.c
+endif
+
+ifeq (${STM32MP1_RESET_HALT_WORKAROUND},1)
+BL2_SOURCES		+=	plat/st/stm32mp1/stm32mp1_helper_dbg.S
+endif
+
+# Do not use neon in TF-A code, it leads to issues in low-power functions
+TF_CFLAGS		+=	-mfloat-abi=soft
 
 # Macros and rules to build TF binary
 STM32_TF_ELF_LDFLAGS	:=	--hash-style=gnu --as-needed
-STM32_DT_BASENAME	:=	$(STM32_DTB_FILE_NAME:.dtb=)
+STM32_DT_BASENAME	:=	$(DTB_FILE_NAME:.dtb=)
 STM32_TF_STM32		:=	${BUILD_PLAT}/tf-a-${STM32_DT_BASENAME}.stm32
 STM32_TF_BINARY		:=	$(STM32_TF_STM32:.stm32=.bin)
 STM32_TF_MAPFILE	:=	$(STM32_TF_STM32:.stm32=.map)
 STM32_TF_LINKERFILE	:=	$(STM32_TF_STM32:.stm32=.ld)
 STM32_TF_ELF		:=	$(STM32_TF_STM32:.stm32=.elf)
-STM32_TF_DTBFILE	:=      ${BUILD_PLAT}/fdts/${STM32_DTB_FILE_NAME}
+STM32_TF_DTBFILE	:=      ${BUILD_PLAT}/fdts/${DTB_FILE_NAME}
 STM32_TF_OBJS		:=	${BUILD_PLAT}/stm32mp1.o
 
 # Variables for use with stm32image
@@ -123,7 +227,7 @@ ${STM32_TF_OBJS}:	plat/st/stm32mp1/stm32mp1.S bl2 ${BL32_DEP} ${STM32_TF_DTBFILE
 				-DDTB_BIN_PATH=\"${STM32_TF_DTBFILE}\" \
 				-c plat/st/stm32mp1/stm32mp1.S -o $@
 
-${STM32_TF_LINKERFILE}:	plat/st/stm32mp1/stm32mp1.ld.S
+${STM32_TF_LINKERFILE}:	plat/st/stm32mp1/stm32mp1.ld.S ${BUILD_PLAT}
 			@echo "  LDS     $<"
 			${Q}${AS} ${ASFLAGS} ${TF_CFLAGS} -P -E $< -o $@
 

@@ -8,6 +8,9 @@
 #define __BL2_PRIVATE_H__
 
 #if BL2_IN_XIP_MEM
+
+#include <stdint.h>
+
 /*******************************************************************************
  * Declarations of linker defined symbols which will tell us where BL2 lives
  * in Trusted ROM and RAM

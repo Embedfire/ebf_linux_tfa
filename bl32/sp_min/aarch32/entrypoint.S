@@ -44,10 +44,19 @@
 
 vector_base sp_min_vector_table
 	b	sp_min_entrypoint
+#if AARCH32_EXCEPTION_DEBUG
+	b	report_undef_inst	/* Undef */
+#else
 	b	plat_panic_handler	/* Undef */
+#endif
 	b	sp_min_handle_smc	/* Syscall */
+#if AARCH32_EXCEPTION_DEBUG
+	b	report_prefetch_abort	/* Prefetch abort */
+	b	report_data_abort	/* Data abort */
+#else
 	b	plat_panic_handler	/* Prefetch abort */
 	b	plat_panic_handler	/* Data abort */
+#endif
 	b	plat_panic_handler	/* Reserved */
 	b	plat_panic_handler	/* IRQ */
 	b	sp_min_handle_fiq	/* FIQ */

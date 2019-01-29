@@ -24,12 +24,22 @@
 #define PLATFORM_STACK_SIZE		0xC00
 #endif
 
+#ifdef AARCH32_SP_OPTEE
+#define OPTEE_HEADER_IMAGE_NAME		"teeh"
+#define OPTEE_PAGED_IMAGE_NAME		"teed"
+#define OPTEE_PAGER_IMAGE_NAME		"teex"
+#define OPTEE_HEADER_BINARY_TYPE	U(0x20)
+#define OPTEE_PAGER_BINARY_TYPE		U(0x21)
+#define OPTEE_PAGED_BINARY_TYPE		U(0x22)
+#endif
+
 /* SSBL = second stage boot loader */
 #define BL33_IMAGE_NAME			"ssbl"
+#define BL33_BINARY_TYPE		U(0x0)
 
-#define STM32MP1_PRIMARY_CPU		U(0x0)
+#define STM32MP_PRIMARY_CPU		U(0x0)
+#define STM32MP_SECONDARY_CPU		U(0x1)
 
-#define PLATFORM_CACHE_LINE_SIZE	64
 #define PLATFORM_CLUSTER_COUNT		ULL(1)
 #define PLATFORM_CLUSTER0_CORE_COUNT	U(2)
 #define PLATFORM_CLUSTER1_CORE_COUNT	U(0)
@@ -37,8 +47,9 @@
 					 PLATFORM_CLUSTER0_CORE_COUNT)
 #define PLATFORM_MAX_CPUS_PER_CLUSTER	2
 
-#define MAX_IO_DEVICES			4
-#define MAX_IO_HANDLES			4
+#define MAX_IO_DEVICES			U(4)
+#define MAX_IO_HANDLES			U(4)
+#define MAX_IO_BLOCK_DEVICES		U(1)
 
 /*******************************************************************************
  * BL2 specific defines.
@@ -47,39 +58,45 @@
  * Put BL2 just below BL3-1. BL2_BASE is calculated using the current BL2 debug
  * size plus a little space for growth.
  */
-#define BL2_BASE			STM32MP1_BL2_BASE
-#define BL2_LIMIT			(STM32MP1_BL2_BASE + \
-					 STM32MP1_BL2_SIZE)
+#define BL2_BASE			STM32MP_BL2_BASE
+#define BL2_LIMIT			(STM32MP_BL2_BASE + \
+					 STM32MP_BL2_SIZE)
 
 /*******************************************************************************
  * BL32 specific defines.
  ******************************************************************************/
-#define BL32_BASE			STM32MP1_BL32_BASE
-#define BL32_LIMIT			(STM32MP1_BL32_BASE + \
-					 STM32MP1_BL32_SIZE)
+#ifndef AARCH32_SP_OPTEE
+#define BL32_BASE			STM32MP_BL32_BASE
+#define BL32_LIMIT			(STM32MP_BL32_BASE + \
+					 STM32MP_BL32_SIZE)
+#endif
 
 /*******************************************************************************
  * BL33 specific defines.
  ******************************************************************************/
-#define BL33_BASE			STM32MP1_BL33_BASE
+#define BL33_BASE			STM32MP_BL33_BASE
 
 /*
  * Load address of BL33 for this platform port
  */
-#define PLAT_STM32MP1_NS_IMAGE_OFFSET	BL33_BASE
+#define PLAT_STM32MP_NS_IMAGE_OFFSET	BL33_BASE
+
+/* need by flash programmer */
+#define FLASHLAYOUT_BASE		STM32MP_DDR_BASE
+#define FLASHLAYOUT_LIMIT		STM32MP_BL33_BASE
 
 /*******************************************************************************
  * DTB specific defines.
  ******************************************************************************/
-#define DTB_BASE			STM32MP1_DTB_BASE
-#define DTB_LIMIT			(STM32MP1_DTB_BASE + \
-					 STM32MP1_DTB_SIZE)
+#define DTB_BASE			STM32MP_DTB_BASE
+#define DTB_LIMIT			(STM32MP_DTB_BASE + \
+					 STM32MP_DTB_SIZE)
 
 /*******************************************************************************
  * Platform specific page table and MMU setup constants
  ******************************************************************************/
-#define PLAT_PHY_ADDR_SPACE_SIZE	(1ULL << 32)
-#define PLAT_VIRT_ADDR_SPACE_SIZE	(1ULL << 32)
+#define PLAT_PHY_ADDR_SPACE_SIZE	(ULL(1) << 32)
+#define PLAT_VIRT_ADDR_SPACE_SIZE	(ULL(1) << 32)
 
 /*******************************************************************************
  * Declarations and constants to access the mailboxes safely. Each mailbox is
@@ -98,6 +115,8 @@
  */
 #define ARM_IRQ_SEC_PHY_TIMER		U(29)
 
+#define ARM_IRQ_NON_SEC_SGI_0		U(0)
+
 #define ARM_IRQ_SEC_SGI_0		U(8)
 #define ARM_IRQ_SEC_SGI_1		U(9)
 #define ARM_IRQ_SEC_SGI_2		U(10)
@@ -107,7 +126,15 @@
 #define ARM_IRQ_SEC_SGI_6		U(14)
 #define ARM_IRQ_SEC_SGI_7		U(15)
 
+/* Platform IRQ Priority */
+#define STM32MP1_IRQ_RCC_SEC_PRIO	U(0x6)
+#define STM32MP1_IRQ_SEC_SPI_PRIO	U(0x10)
+
 #define STM32MP1_IRQ_TZC400		U(36)
+#define STM32MP1_IRQ_MCU_SEV		U(176)
+#define STM32MP1_IRQ_RCC_WAKEUP		U(177)
+#define STM32MP1_IRQ_IWDG1		U(182)
+#define STM32MP1_IRQ_IWDG2		U(183)
 #define STM32MP1_IRQ_TAMPSERRS		U(229)
 #define STM32MP1_IRQ_AXIERRIRQ		U(244)
 
@@ -118,9 +145,6 @@
  */
 #define PLATFORM_G1S_PROPS(grp) \
 	INTR_PROP_DESC(ARM_IRQ_SEC_PHY_TIMER,		\
-		       GIC_HIGHEST_SEC_PRIORITY,	\
-		       grp, GIC_INTR_CFG_LEVEL),	\
-	INTR_PROP_DESC(STM32MP1_IRQ_TAMPSERRS,		\
 		       GIC_HIGHEST_SEC_PRIORITY,	\
 		       grp, GIC_INTR_CFG_LEVEL),	\
 	INTR_PROP_DESC(STM32MP1_IRQ_AXIERRIRQ,		\

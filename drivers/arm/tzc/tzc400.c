@@ -68,6 +68,59 @@ DEFINE_TZC_COMMON_WRITE_REGION_ID_ACCESS(400, 400)
 DEFINE_TZC_COMMON_CONFIGURE_REGION0(400)
 DEFINE_TZC_COMMON_CONFIGURE_REGION(400)
 
+static inline void tzc400_clear_it(long base, uint32_t filter)
+{
+	mmio_write_32(base + INT_CLEAR, 1 << filter);
+}
+
+static inline uint32_t tzc400_get_int_by_filter(long base, uint32_t filter)
+{
+	 return (mmio_read_32(base + INT_STATUS) & (1 << filter));
+}
+
+#if DEBUG
+static long tzc400_get_fail_address(long base, uint32_t filter)
+{
+	long fail_address = 0;
+
+	if (sizeof(long) == sizeof(uint32_t)) {
+		if (filter) {
+			fail_address = mmio_read_32(base +
+						FAIL_ADDRESS_LOW_OFF +
+						FILTER_OFFSET);
+		} else {
+			fail_address = mmio_read_32(base +
+						FAIL_ADDRESS_LOW_OFF);
+		}
+	} else {
+		if (filter) {
+			fail_address = mmio_read_32(base +
+						FAIL_ADDRESS_LOW_OFF +
+						FILTER_OFFSET) +
+					mmio_read_32(base +
+						FAIL_ADDRESS_HIGH_OFF +
+						FILTER_OFFSET);
+		} else {
+			fail_address = mmio_read_32(base +
+						FAIL_ADDRESS_LOW_OFF) +
+					mmio_read_32(base +
+						FAIL_ADDRESS_HIGH_OFF);
+		}
+	}
+	return fail_address;
+}
+#endif
+
+static inline uint32_t tzc400_get_fail_control(long base, uint32_t filter)
+{
+	if (filter) {
+		return mmio_read_32(base + FAIL_CONTROL_OFF +
+					FILTER_OFFSET);
+	} else {
+		return mmio_read_32(base + FAIL_CONTROL_OFF);
+	}
+}
+
 static unsigned int _tzc400_get_gate_keeper(uintptr_t base,
 				unsigned int filter)
 {
@@ -235,4 +288,80 @@ void tzc400_disable_filters(void)
 	 */
 	for (filter = 0; filter < tzc400.num_filters; filter++)
 		_tzc400_set_gate_keeper(tzc400.base, filter, 0);
+}
+
+void tzc400_clear_all_interrupts(void)
+{
+	unsigned int filter;
+
+	assert(tzc400.base);
+	for (filter = 0; filter < tzc400.num_filters; filter++) {
+		mmio_write_32(tzc400.base + INT_CLEAR, 1 << filter);
+	}
+}
+
+int tzc400_is_pending_interrupt(void)
+{
+	unsigned int filter;
+
+	assert(tzc400.base);
+	for (filter = 0; filter < tzc400.num_filters; filter++) {
+		if (mmio_read_32(tzc400.base + INT_STATUS) & (1 << filter)) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void tzc400_it_handler(void)
+{
+	uint32_t filter = 0;
+	uint32_t filter_it_pending = tzc400.num_filters;
+	uint32_t control_fail = 0;
+#if DEBUG
+	long address_fail = 0;
+#endif
+
+	assert(tzc400.base);
+
+	/* first display information conerning the fault access */
+	for (filter = 0; (filter < tzc400.num_filters) &&
+	     (filter_it_pending == tzc400.num_filters); filter++) {
+		if (tzc400_get_int_by_filter(tzc400.base, filter))
+			filter_it_pending =  filter;
+	}
+
+	if (filter_it_pending == tzc400.num_filters) {
+		ERROR("Error no it pending!!");
+		panic();
+	}
+
+#if DEBUG
+	address_fail = tzc400_get_fail_address(tzc400.base, filter_it_pending);
+	ERROR("Illegal access to 0x%lx in :\n",address_fail);
+#endif
+
+	control_fail = tzc400_get_fail_control(tzc400.base, filter_it_pending);
+
+
+
+	if ((control_fail & FAIL_CONTROL_NS_SHIFT) == FAIL_CONTROL_NS_SECURE) {
+		ERROR("\tSecure\n");
+	} else {
+		ERROR("\tNo Secure\n");
+	}
+
+	if ((control_fail & FAIL_CONTROL_PRIV_SHIFT) == FAIL_CONTROL_PRIV_PRIV) {
+		ERROR("\tPrivilege\n");
+	} else {
+		ERROR("\tUnprivilege\n");
+	}
+
+	if ((control_fail & FAIL_CONTROL_DIR_SHIFT) == FAIL_CONTROL_DIR_READ) {
+		ERROR("\tRead\n");
+	} else {
+		ERROR("\tWrite\n");
+	}
+
+	tzc400_clear_it(tzc400.base, filter_it_pending);
 }

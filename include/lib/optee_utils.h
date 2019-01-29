@@ -8,6 +8,7 @@
 
 #include <bl_common.h>
 
+int get_optee_header_ep(entry_point_info_t *header_ep, uintptr_t *pc);
 int parse_optee_header(entry_point_info_t *header_ep,
 	image_info_t *pager_image_info,
 	image_info_t *paged_image_info);

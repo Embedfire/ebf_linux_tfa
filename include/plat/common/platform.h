@@ -93,6 +93,11 @@ unsigned int plat_ic_get_interrupt_id(unsigned int raw);
  ******************************************************************************/
 uintptr_t plat_get_my_stack(void);
 void plat_report_exception(unsigned int exception_type);
+#if AARCH32_EXCEPTION_DEBUG
+void plat_report_undef_inst(unsigned int fault_address);
+void plat_report_prefetch_abort(unsigned int fault_address);
+void plat_report_data_abort(unsigned int fault_address);
+#endif
 int plat_crash_console_init(void);
 int plat_crash_console_putc(int c);
 int plat_crash_console_flush(void);

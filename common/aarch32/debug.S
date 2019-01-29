@@ -7,9 +7,16 @@
 #include <arch.h>
 #include <asm_macros.S>
 
+	.globl	asm_print_str
+	.globl	asm_print_hex
 	.globl	asm_assert
 	.globl	do_panic
 	.globl	report_exception
+#if AARCH32_EXCEPTION_DEBUG
+	.globl	report_undef_inst
+	.globl	report_prefetch_abort
+	.globl	report_data_abort
+#endif
 
 /* Since the max decimal input number is 65536 */
 #define MAX_DEC_DIVISOR		10000
@@ -65,6 +72,41 @@ func report_exception
 	bl	plat_report_exception
 	no_ret	plat_panic_handler
 endfunc report_exception
+
+#if AARCH32_EXCEPTION_DEBUG
+	/***********************************************************
+	 * This function is called from the vector table for
+	 * undefined instruction. The lr_und is given as an
+	 * argument to platform handler.
+	 ***********************************************************/
+func report_undef_inst
+	mrs	r0, lr_und
+	bl	plat_report_undef_inst
+	no_ret	plat_panic_handler
+endfunc report_undef_inst
+
+	/***********************************************************
+	 * This function is called from the vector table for
+	 * unhandled exceptions. The lr_abt is given as an
+	 * argument to platform handler.
+	 ***********************************************************/
+func report_prefetch_abort
+	mrs	r0, lr_abt
+	bl	plat_report_prefetch_abort
+	no_ret	plat_panic_handler
+endfunc report_prefetch_abort
+
+	/***********************************************************
+	 * This function is called from the vector table for
+	 * unhandled exceptions. The lr_abt is given as an
+	 * argument to platform handler.
+	 ***********************************************************/
+func report_data_abort
+	mrs	r0, lr_abt
+	bl	plat_report_data_abort
+	no_ret	plat_panic_handler
+endfunc report_data_abort
+#endif
 
 #if ENABLE_ASSERTIONS
 .section .rodata.assert_str, "aS"
@@ -151,10 +193,10 @@ endfunc asm_assert
 
 /*
  * This function prints a string from address in r4
- * Clobber: lr, r0 - r4
+ * Clobber: lr, r0 - r4, r7
  */
 func asm_print_str
-	mov	r3, lr
+	mov	r7, lr
 1:
 	ldrb	r0, [r4], #0x1
 	cmp	r0, #0
@@ -162,16 +204,16 @@ func asm_print_str
 	bl	plat_crash_console_putc
 	b	1b
 2:
-	bx	r3
+	bx	r7
 endfunc asm_print_str
 
 /*
  * This function prints a hexadecimal number in r4.
  * In: r4 = the hexadecimal to print.
- * Clobber: lr, r0 - r3, r5
+ * Clobber: lr, r0 - r3, r5, r7
  */
 func asm_print_hex
-	mov	r3, lr
+	mov	r7, lr
 	mov	r5, #32  /* No of bits to convert to ascii */
 1:
 	sub	r5, r5, #4
@@ -188,5 +230,5 @@ func asm_print_hex
 	bl	plat_crash_console_putc
 	cmp	r5, #0
 	bne	1b
-	bx	r3
+	bx	r7
 endfunc asm_print_hex

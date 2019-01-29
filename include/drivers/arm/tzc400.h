@@ -32,6 +32,7 @@
 #define BUILD_CONFIG_NR_SHIFT			0
 #define BUILD_CONFIG_NR_MASK			0x1f
 
+#define FILTER_OFFSET				0x10
 /*
  * Number of gate keepers is implementation defined. But we know the max for
  * this device is 4. Get implementation details from BUILD_CONFIG.
@@ -112,6 +113,9 @@ void tzc400_configure_region(unsigned int filters,
 void tzc400_set_action(tzc_action_t action);
 void tzc400_enable_filters(void);
 void tzc400_disable_filters(void);
+void tzc400_clear_all_interrupts(void);
+int tzc400_is_pending_interrupt(void);
+void tzc400_it_handler(void);
 
 static inline void tzc_init(uintptr_t base)
 {

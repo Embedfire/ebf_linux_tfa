@@ -61,6 +61,9 @@
  * Generic timer memory mapped registers & offsets
  ******************************************************************************/
 #define CNTCR_OFF			U(0x000)
+#define CNTSR_OFF			U(0x004)
+#define CNTCVL_OFF			U(0x008)
+#define CNTCVU_OFF			U(0x00C)
 #define CNTFID_OFF			U(0x020)
 
 #define CNTCR_EN			(U(1) << 0)
@@ -457,6 +460,8 @@
 #define HSTR		p15, 4, c1, c1, 3
 #define CNTHCTL		p15, 4, c14, c1, 0
 #define CNTKCTL		p15, 0, c14, c1, 0
+#define CNTPTVAL	p15, 0, c14, c2, 0
+#define CNTPCTL		p15, 0, c14, c2, 1
 #define VPIDR		p15, 4, c0, c0, 0
 #define VMPIDR		p15, 4, c0, c0, 5
 #define ISR		p15, 0, c12, c1, 0
@@ -466,6 +471,7 @@
 #define HTCR		p15, 4, c2, c0, 2
 #define HMAIR0		p15, 4, c10, c2, 0
 #define ATS1CPR		p15, 0, c7, c8, 0
+#define ATS1CPW		p15, 0, c7, c8, 1
 #define ATS1HR		p15, 4, c7, c8, 0
 #define DBGOSDLR	p14, 0, c1, c3, 4
 
@@ -513,6 +519,12 @@
 #define ICC_SGI1R_EL1_64	p15, 0, c12
 #define ICC_ASGI1R_EL1_64	p15, 1, c12
 #define ICC_SGI0R_EL1_64	p15, 2, c12
+
+/* Fault registers. The format is: coproc, opt1, CRn, CRm, opt2 */
+#define DFSR		p15, 0, c5, c0, 0
+#define IFSR		p15, 0, c5, c0, 1
+#define DFAR		p15, 0, c6, c0, 0
+#define IFAR		p15, 0, c6, c0, 2
 
 /*******************************************************************************
  * Definitions of MAIR encodings for device and normal memory
@@ -567,6 +579,8 @@
 /* PAR fields */
 #define PAR_F_SHIFT	U(0)
 #define PAR_F_MASK	ULL(0x1)
+#define PAR_NS_SHIFT	U(9)
+#define PAR_NS_MASK	U(0x1)
 #define PAR_ADDR_SHIFT	U(12)
 #define PAR_ADDR_MASK	(BIT_64(40) - ULL(1)) /* 40-bits-wide page address */
 

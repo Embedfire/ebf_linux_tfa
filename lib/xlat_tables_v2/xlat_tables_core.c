@@ -1026,7 +1026,12 @@ void init_xlat_tables_ctx(xlat_ctx_t *ctx)
 	xlat_mmap_print(mm);
 
 	/* All tables must be zeroed before mapping any region. */
-
+#ifdef PLAT_BASE_XLAT_BASE
+	inv_dcache_range(PLAT_BASE_XLAT_BASE, PLAT_BASE_XLAT_SIZE);
+#endif
+#ifdef PLAT_XLAT_BASE
+	inv_dcache_range(PLAT_XLAT_BASE, PLAT_XLAT_SIZE);
+#endif
 	for (unsigned int i = 0U; i < ctx->base_table_entries; i++)
 		ctx->base_table[i] = INVALID_DESC;
 

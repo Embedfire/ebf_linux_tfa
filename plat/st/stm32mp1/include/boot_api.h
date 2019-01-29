@@ -1,13 +1,108 @@
 /*
- * Copyright (c) 2017, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2018, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#ifndef __BOOT_API_H
-#define __BOOT_API_H
+#ifndef BOOT_API_H
+#define BOOT_API_H
 
 #include <stdint.h>
+#include <stdio.h>
+
+/*
+ * Exported constants
+ */
+
+/*
+ * Boot Context related definitions
+ */
+
+/*
+ * Possible value of boot context field 'boot_action'
+ */
+/* Boot action is Process Cold Boot */
+#define BOOT_API_CTX_BOOT_ACTION_COLD_BOOT_PROCESS		0x09U
+/* Boot action is Process Wakeup from CSTANDBY */
+#define BOOT_API_CTX_BOOT_ACTION_WAKEUP_CSTANDBY		0x0AU
+/* Boot action is Process Wakeup from STANDBY  */
+#define BOOT_API_CTX_BOOT_ACTION_WAKEUP_STANDBY			0x0BU
+/* Boot action is Process Engineering Boot */
+#define BOOT_API_CTX_BOOT_ACTION_ENGI_BOOT			0x0CU
+
+#define BOOT_API_CTX_BOOT_ACTION_MPU_CORE0_RESET_PROCESS	0x0F
+
+/*
+ * Possible value of boot context field 'stby_exit_status'
+ */
+
+/* The boot reason is not a STANDBY Exit reason */
+#define BOOT_API_CTX_STBY_EXIT_STATUS_NO_STANDBY                0x00
+
+/* STANDBY Exit with MPU_BEN=1, MCU_BEN=0 */
+#define BOOT_API_CTX_STBY_EXIT_STATUS_WKUP_MPU_ONLY             0x01
+
+/*
+ * STANDBY Exit with MPU_BEN=1, MCU_BEN=1, MPU will go for cold boot
+ * MCU restarted by bootROM
+ */
+#define BOOT_API_CTX_STBY_EXIT_STATUS_WKUP_ALL_CORES            0x02
+
+/*
+ * STANDBY Exit with MPU_BEN=1, MCU_BEN=1, MPU will go for cold boot
+ * but MCU restart aborted (code integrity check) : have not been restarted
+ * by bootROM
+ */
+#define BOOT_API_CTX_STBY_EXIT_STATUS_WKUP_ALL_CORES_MCU_ABT    0x03
+
+/*
+ * STANDBY Exit with MPU_BEN=0, MCU_BEN=1, MPU gone to CSTANDBY,
+ * MCU restarted correctly by bootROM
+ * This value should never be read by FSBL, because not executed in that case
+ */
+#define BOOT_API_CTX_STBY_EXIT_STATUS_WKUP_MCU_ONLY             0x04
+
+/*
+ * STANDBY Exit with MPU_BEN=0, MCU_BEN=1, MCU restart aborted
+ * due code integrity check, then MPU will go for cold boot despite
+ * was not planned initially
+ */
+#define BOOT_API_CTX_STBY_EXIT_STATUS_WKUP_MCU_ONLY_MCU_ABT     0x05
+
+/*
+ * STANDBY Exit with MPU_BEN=1, MCU_BEN=1, MCU restart aborted
+ * due to MCU security perimeter issue
+ */
+#define \
+BOOT_API_CTX_STBY_EXIT_STATUS_WKUP_ALL_CORES_MCU_ABT_SEC_PERIMETER_ISSUE 0x06
+
+/*
+ * STANDBY Exit with MPU_BEN=0, MCU_BEN=1, MCU restart aborted
+ * due to MCU security perimeter issue, then MPU will go for cold boot
+ * despite was not planned initially
+ */
+#define \
+BOOT_API_CTX_STBY_EXIT_STATUS_WKUP_MCU_ONLY_MCU_ABT_SEC_PERIMETER_ISSUE	0x07
+
+/*
+ * Possible value of boot context field 'cstby_exit_status'
+ */
+/* The boot reason is not a CSTANDBY Exit reason */
+#define BOOT_API_CTX_CSTBY_EXIT_STATUS_NO_CSTBY			0x00
+/* CSTANDBY Exit with MCU detected as Not running */
+#define BOOT_API_CTX_CSTBY_EXIT_STATUS_MCU_NOT_RUNNING		0x01
+/* CSTANDBY Exit with MCU detected as Running  */
+#define BOOT_API_CTX_CSTBY_EXIT_STATUS_MCU_RUNNING		0x02
+
+/*
+ * Possible value of boot context field 'auth_status'
+ */
+ /* No authentication done */
+#define BOOT_API_CTX_AUTH_NO					0x00
+ /* Authentication done and failed */
+#define BOOT_API_CTX_AUTH_FAILED				0x01
+ /* Authentication done and success */
+#define BOOT_API_CTX_AUTH_SUCCESS				0x02
 
 /*
  * Possible value of boot context field 'boot_interface_sel'
@@ -21,6 +116,21 @@
 
 /* Boot occurred on EMMC */
 #define BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC		0x2U
+
+/* boot occurred on NAND FMC */
+#define BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_FMC		0x3U
+
+/* boot occurred on QSPI NOR */
+#define BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_QSPI		0x4U
+
+/* boot occurred on UART  */
+#define BOOT_API_CTX_BOOT_INTERFACE_SEL_SERIAL_UART		0x5U
+
+/* boot occurred on USB */
+#define BOOT_API_CTX_BOOT_INTERFACE_SEL_SERIAL_USB		0x6U
+
+/* boot occurred on NAND QSPI */
+#define BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_QSPI		0x7U
 
 /**
  * @brief  Possible value of boot context field 'EmmcXferStatus'
@@ -44,6 +154,10 @@
 #define BOOT_API_CTX_EMMC_ERROR_STATUS_HEADER_NOT_FOUND         0x5U
 #define BOOT_API_CTX_EMMC_ERROR_STATUS_HEADER_SIZE_ZERO         0x6U
 #define BOOT_API_CTX_EMMC_ERROR_STATUS_IMAGE_NOT_COMPLETE       0x7U
+
+/* Definitions relative to 'p_rom_version_info->platform_type_ver' field */
+#define BOOT_API_CTX_ROM_VERSION_PLAT_VER_IC_EMU_FPGA           0xAA
+#define BOOT_API_CTX_ROM_VERSION_PLAT_VER_FPGA_ONLY             0xBB
 
 /* Image Header related definitions */
 
@@ -76,6 +190,64 @@
 #define BOOT_API_A7_CORE1_MAGIC_NUMBER				0xCA7FACE1U
 
 /*
+ * MCU Code Integrity Check related definitions
+ */
+
+/*
+ * Defines to identify RTC backup registers to be used for MCU code integrity
+ * check
+ */
+
+/*
+ * TAMP_BCK0R contains two bits
+ * bit 0 : wanted value of 'RCC_TZCR.TZEN'
+ * bit 1 : wanted value of 'RCC_TZCR.MCKPROT'
+ */
+
+/*
+ * TAMP_BCK0R bit position coding wanted value of 'RCC_TZCR.TZEN'
+ * trustZone aware domain enabling/disabling
+ */
+#define BOOT_API_MCIC_MCU_SECURITY_PERIMETER_TZEN_BIT			0
+
+/*
+ * TAMP_BCK0R bit position coding wanted value of 'RCC_TZCR.MCKPROT'
+ * ability of MCU to modify some clock settings in RCC
+ */
+#define BOOT_API_MCIC_MCU_SECURITY_PERIMETER_MCKPROT_BIT		1
+
+/* TAMP_BCK0R register index */
+#define \
+BOOT_API_MCIC_MCU_SECURITY_PERIMETER_TZEN_MCKPROT_TAMP_BCK_REG_IDX	0
+
+/*
+ * TAMP_BCK1R register index
+ * This register is coding the wanted value of register 'EXTI_TZENR1'
+ * to be programmed by bootROM on wakeup from STANDBY when MCUBEN=1
+ * that is MCU quick restart requested
+ */
+#define \
+BOOT_API_MCIC_MCU_SECURITY_PERIMETER_EXTI_TZENR1_TAMP_BCK_REG_IDX	1
+
+/*
+ * TAMP_BCK2R register index
+ * This register is coding the wanted value of register 'EXTI_TZENR2'
+ * to be programmed by bootROM on wakeup from STANDBY when MCUBEN=1
+ * that is MCU quick restart requested
+ */
+#define \
+BOOT_API_MCIC_MCU_SECURITY_PERIMETER_EXTI_TZENR2_TAMP_BCK_REG_IDX	2
+
+/*
+ * TAMP_BCK3R register index
+ * This register is coding the wanted value of register 'EXTI_TZENR3'
+ * to be programmed by bootROM on wakeup from STANDBY when MCUBEN=1
+ * that is MCU quick restart requested
+ */
+#define \
+BOOT_API_MCIC_MCU_SECURITY_PERIMETER_EXTI_TZENR3_TAMP_BCK_REG_IDX	3
+
+/*
  * TAMP_BCK4R register index
  * This register is used to write a Magic Number in order to restart
  * Cortex A7 Core 1 and make it execute @ branch address from TAMP_BCK5R
@@ -88,6 +260,39 @@
  * Cortex A7 Core 1 when restarted by a TAMP_BCK4R magic number writing
  */
 #define BOOT_API_CORE1_BRANCH_ADDRESS_TAMP_BCK_REG_IDX		5U
+
+/*
+ * TAMP_BCK22R register index
+ * This register contains offset in bytes of code to Hash in RETRAM region
+ * Note : offset is intended as relative value from start of RETRAM
+ */
+#define \
+BOOT_API_MCIC_OFFSET_IN_BYTES_CODE_TO_HASH_RETRAM_TAMP_BCK_REG_IDX	22
+
+/*
+ * TAMP_BCK23R register index
+ * This register contains the size in bytes of the single consecutive region
+ * of MCU Firmware in RETRAM (Retention RAM) to hash (by SHA-256)
+ * Note : This is required as a MCU firmware Code Integrity Check (aka : MCIC)
+ * to avoid bootROM restarting MCU on a corrupted firmware
+ */
+#define \
+BOOT_API_MCIC_RETRAM_REGION_TO_HASH_IN_BYTES_TAMP_BCK_REG_IDX		23
+
+/*
+ * TAMP_BCK24R to TAMP_BCK31R register indexes
+ * Those registers contains SHA-256 digest of RETRAM MCU Firmware code between
+ * [(RETRAM_start + offset) -- (RETRAM_start + offset + size_to_hash)]
+ * in this order
+ * This is the MCU Code Integrity Check MCU Firmware signature
+ * value on 256 bits
+ */
+
+/* First TAMP_BKP index of MCU Firmware signature : ie TAMP_BCK24R */
+#define BOOT_API_MCIC_SHA_DIGEST_FIRST_TAMP_BCK_REG_IDX			24
+
+/* Last TAMP_BKP index of MCU Firmware signature : ie TAMP_BCK31R */
+#define BOOT_API_MCIC_SHA_DIGEST_LAST_TAMP_BCK_REG_IDX			31
 
 /*
  * Possible value of boot context field 'hse_clock_value_in_hz'
@@ -113,6 +318,57 @@
 /* Closed = OTP_CFG0[6] */
 #define BOOT_API_OTP_MODE_CLOSED_BIT_POS			6
 
+/* Mapping of OTP Word and OTP bits managing SSP and useful to FSBL-SSP */
+/* OTP_CFG8 */
+#define BOOT_API_OTP_SSP_WORD_NB				8U
+/* SSP_REQ = OTP_CFG8[8] */
+#define BOOT_API_OTP_SSP_REQ_BIT_POS				8
+/* SSP_SUCCESS = OTP_CFG8[9] */
+#define BOOT_API_OTP_SSP_SUCCESS_BIT_POS			9
+
+/*
+ * Possible values of boot context field
+ * 'ssp_config_ptr_in->ssp_cmd'
+ */
+/* 'K' 'B' 'U' 'P' -.> 'PUBK' */
+#define BOOT_API_CTX_SSP_CMD_CALC_CHIP_PUBK             0x4B425550
+
+/*
+ * Exported types
+ */
+
+/* SSP Configuration structure */
+typedef struct {
+	/* SSP Command*/
+	uint32_t ssp_cmd;
+	uint8_t	reserved[20];
+} boot_api_ssp_config_t;
+
+/*
+ * bootROM version information structure definition
+ * Total size = 24 bytes = 6 uint32_t
+ */
+typedef struct {
+	/* Chip Version */
+	uint32_t chip_ver;
+
+	/* Cut version within a fixed chip version */
+	uint32_t cut_ver;
+
+	/* Version of ROM Mask within a fixed cut version */
+	uint32_t rom_mask_ver;
+
+	/* Internal Version of bootROM code */
+	uint32_t bootrom_ver;
+
+	/* Version of bootROM adapted */
+	uint32_t for_chip_design_rtl_ver;
+
+	/* Restriction on compiled platform when it applies */
+	uint32_t platform_type_ver;
+
+} boot_api_rom_version_info_t;
+
 /*
  * Boot Context related definitions
  */
@@ -129,9 +385,133 @@ typedef struct {
 	 */
 	uint16_t boot_interface_selected;
 	uint16_t boot_interface_instance;
-	uint32_t reserved1[13];
+	uint32_t reserved1;
+	uint32_t nand_data_width;
+	uint32_t nand_block_size;
+	uint32_t nand_page_size;
+	uint32_t reserved2;
+	uint32_t nand_ecc_bits;
+	uint32_t nand_block_nb;
+	uint32_t reserved3[4];
+	uint32_t nor_isdual;
+	uint32_t usb_context;
 	uint32_t otp_afmux_values[3];
-	uint32_t reserved[9];
+	uint32_t reserved[2];
+	/*
+	 * Log to boot context, what was the kind of boot action
+	 * takes values from defines BOOT_API_BOOT_ACTION_XXX above
+	 */
+	uint32_t boot_action;
+	/*
+	 * STANDBY Exit status to be checked by FSBL in case
+	 * field 'boot_action' == BOOT_API_CTX_BOOT_ACTION_WAKEUP_STANDBY
+	 * take values from defines above 'BOOT_API_CTX_STBY_EXIT_STATUS_XXX'
+	 * depending on encountered situation
+	 */
+	uint32_t stby_exit_status;
+	/*
+	 * CSTANDBY Exit status to be checked by FSBL in case
+	 * boot_action == BOOT_API_CTX_BOOT_ACTION_WAKEUP_CSTANDBY
+	 * take values from defines above 'BOOT_API_CTX_CSTBY_EXIT_STATUS_XXX'
+	 * depending on encountered situation
+	 */
+	uint32_t cstby_exit_status;
+	/*
+	 * Returned authentication status : take values from defines
+	 * BOOT_API_CTX_AUTH_XXX above
+	 */
+	uint32_t auth_status;
+
+	/*
+	 *******************************************************
+	 * Pointers to bootROM External Secure Services
+	 * External Secure Services offered by bootROM
+	 * - ECDSA check key
+	 * - ECDSA verify signature
+	 * - ECDSA verify signature and go
+	 *******************************************************
+	 */
+	/*
+	 * Check if hash of p_pub_key_in is equal to hash by SHA-256
+	 * of OEM public key from OTP
+	 *
+	 *	    If no: => infinite loop in bootROM : boot failed
+	 *
+	 *          else: copy p_pub_key_in to p_pub_key_out if
+	 *          p_pub_key_out not NULL.
+	 *                and return to caller.
+	 *
+	 * @param[in]       p_pub_key_in    points to an ECDSA public key :
+	 *                  Very Important : address alignment constraint :
+	 *                  This address should be multiple of 4 bytes only.
+	 * @param[in/out]   p_pub_key_out   points to area where to store copy
+	 *                               of public key.
+	 *                  Very Important : address alignment constraint :
+	 *                  This address should be multiple of 4 bytes only.
+	 * @retval  STD_OK (0x77) or STD_NOT_OK (0x66)
+	 */
+	uint32_t (*p_bootrom_ext_service_ecdsa_check_key)
+		(uint8_t *p_pub_key_in,
+		 uint8_t *p_pub_key_out);
+	/*
+	 * verify ECDSA signature
+	 *
+	 *          Decrypt EDCSA signature from 'p_signature'
+	 *          using public key passed in parameter 'p_pub_key_in'
+	 *          Then compare it to hash from 'p_hash_in' (SHA-256)
+	 *
+	 *          If no match: => infinite loop in bootROM
+	 *
+	 *          else: return to caller
+	 *
+	 * @param[in]    p_hash_in : points on hash in (SHA-256)
+	 *               Very Important : address alignment constraint :
+	 *               This address should be multiple of 4 bytes only.
+	 * @param[in]    p_pub_key_in : points to an ECDSA public key
+	 *               Very Important : address alignment constraint :
+	 *               This address should be multiple of 4 bytes only.
+	 * @param[in]    p_signature : points to an EDCSA signature.
+	 *               Very Important : address alignment constraint :
+	 *               This address should be multiple of 4 bytes only.
+	 * @param[in]    ecc_algo : Ecc algorithm to be used P256 NIST or
+	 *                         Brain_pool 256.
+	 *
+	 * @retval  STD_OK (0x77) or STD_NOT_OK (0x66)
+	 */
+	uint32_t (*p_bootrom_ext_service_ecdsa_verify_signature)
+		(uint8_t *p_hash_in, uint8_t *p_pub_key_in,
+		 uint8_t *p_signature, uint32_t ecc_algo);
+	/*
+	 * verify ECDSA signature and branch to entry point if match
+	 *
+	 *          Decrypt EDCSA signature from 'p_signature'
+	 *          using public key passed in parameter 'p_pub_key_in'
+	 *          Then compare it to hash from 'p_hash_in' (SHA-256)
+	 *
+	 *          If no match: => infinite loop in bootROM
+	 *
+	 *          else: branch CA7-0 to branch address 'p_entry_in'
+	 *
+	 * @param[in]    p_hash_in : points on hash in (SHA-256)
+	 *               Very Important : address alignment constraint :
+	 *               This address should be multiple of 4 bytes only.
+	 * @param[in]    p_pub_key_in : points to an ECDSA public key
+	 *               Very Important : address alignment constraint :
+	 *               This address should be multiple of 4 bytes only.
+	 * @param[in]    p_signature : points to an EDCSA signature.
+	 *               Very Important : address alignment constraint :
+	 *               This address should be multiple of 4 bytes only.
+	 * @param[in]    ecc_algo : Ecc algorithm to be used P256 NIST or
+	 *                         Brain_pool 256.
+	 * @param[in]    p_entry_in : points to branch entry point.
+	 *
+	 * @retval  STD_NOT_OK (0x66)
+	 */
+	uint32_t (*p_bootrom_ext_service_ecdsa_verify_and_go)
+		(uint8_t *p_hash_in, uint8_t *p_pub_key_in,
+		 uint8_t *p_signature_in, uint32_t ecc_algo,
+		 uint32_t *p_entry_in);
+
 	/*
 	 * Information specific to an SD boot
 	 * Updated each time an SD boot is at least attempted,
@@ -161,6 +541,21 @@ typedef struct {
 	 * ie FSBL partition on which the boot was successful
 	 */
 	uint32_t boot_partition_used_toboot;
+	/*
+	 * Address of SSP configuration structure :
+	 * given and defined by bootROM
+	 * and used by FSBL. The structure is of type
+	 * 'boot_api_ssp_config_t'
+	 */
+	boot_api_ssp_config_t *p_ssp_config;
+	/*
+	 * boot context field containing bootROM updated SSP Status
+	 * Values can be of type BOOT_API_CTX_SSP_STATUS_XXX
+	 */
+	uint32_t	ssp_status;
+
+	/* Pointer on ROM constant containing ROM information */
+	const boot_api_rom_version_info_t *p_rom_version_info;
 
 } __packed boot_api_context_t;
 
@@ -229,7 +624,9 @@ typedef struct {
 	 */
 	uint8_t ecc_pubk[BOOT_API_ECDSA_PUB_KEY_LEN_IN_BYTES];
 	/* Pad up to 256 byte total size */
-	uint8_t pad[84];
+	uint8_t pad[83];
+	/* Add binary type information */
+	uint8_t binary_type;
 } __packed boot_api_image_header_t;
 
-#endif /* __BOOT_API_H */
+#endif /* BOOT_API_H */

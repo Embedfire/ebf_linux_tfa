@@ -132,6 +132,36 @@ static int parse_optee_image(image_info_t *image_info,
 }
 
 /*******************************************************************************
+ * Parse the OPTEE header for an executable entry point address.
+ * Return 1 on success, 0 on failure.
+ ******************************************************************************/
+int get_optee_header_ep(entry_point_info_t *header_ep, uintptr_t *pc)
+{
+	optee_header_t *optee_header;
+	int num;
+
+	assert(pc && header_ep && header_ep->pc);
+	optee_header = (optee_header_t *)header_ep->pc;
+
+	if (!tee_validate_header(optee_header))
+		return 0;
+
+	for (num = 0; num < optee_header->nb_images; num++) {
+		optee_image_t *optee_image =
+			&optee_header->optee_image_list[num];
+
+		if (optee_image->image_id != OPTEE_PAGER_IMAGE_ID)
+			continue;
+
+		*pc = ((uint64_t)optee_image->load_addr_hi << 32) |
+			optee_image->load_addr_lo;
+		return 1;
+	}
+
+	return 0;
+}
+
+/*******************************************************************************
  * Parse the OPTEE header
  * Return 0 on success or a negative error code otherwise.
  ******************************************************************************/

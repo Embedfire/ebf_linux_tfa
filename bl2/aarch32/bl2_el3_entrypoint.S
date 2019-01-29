@@ -15,6 +15,10 @@
 
 
 func bl2_entrypoint
+#if STM32MP1_RESET_HALT_WORKAROUND
+	bl	plat_dbg_attach_loop
+#endif
+
 	/* Save arguments x0-x3 from previous Boot loader */
 	mov	r9, r0
 	mov	r10, r1
