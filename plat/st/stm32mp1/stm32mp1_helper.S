@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -311,15 +311,20 @@ func plat_crash_console_putc
 	b	console_stm32_core_putc
 endfunc plat_crash_console_putc
 
-	/* -----------------------------------------------------
+	/* ----------------------------------------------------------
 	 * void plat_panic_handler(void) __dead2;
 	 * Report exception + endless loop.
-	 * -----------------------------------------------------
+	 *
+	 * r6 holds the address where the fault occurred.
+	 * Filling lr with this value allows debuggers to reconstruct
+	 * the backtrace.
+	 * ----------------------------------------------------------
 	 */
 func plat_panic_handler
 	mrs	r0, cpsr
 	and	r0, #MODE32_MASK
 	bl	plat_report_exception
+	mov	lr, r6
 	b	.
 endfunc plat_panic_handler
 
@@ -363,8 +368,8 @@ func wfi_svc_int_enable
 	str	r4, [sp, #SMC_CTX_SCR]
 	cps	#MODE32_svc
 	cpsie	af
-	isb
 	dsb
+	isb
 	wfi
 	cpsid	af
 	cps	#MODE32_mon

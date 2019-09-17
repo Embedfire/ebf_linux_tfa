@@ -26,6 +26,8 @@
 
 #define PWR_CR2_BREN		BIT(0)
 #define PWR_CR2_RREN		BIT(1)
+#define PWR_CR2_BRRDY		BIT(16)
+#define PWR_CR2_RRRDY		BIT(17)
 
 #define PWR_CR3_VBE		BIT(8)
 #define PWR_CR3_VBRS		BIT(9)

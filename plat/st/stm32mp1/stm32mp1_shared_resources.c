@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /*
- * Copyright (c) 2017-2018, STMicroelectronics
+ * Copyright (c) 2017-2019, STMicroelectronics
  */
 
 #include <arch.h>
@@ -764,8 +764,6 @@ static void check_rcc_secure_configuration(void)
 	uint32_t error = 0;
 	bool mckprot = stm32mp1_rcc_is_mckprot();
 	bool secure = stm32mp1_rcc_is_secure();
-
-	stm32mp1_rcc_init_late();
 
 	for (n = 0; n < ARRAY_SIZE(shres_state); n++) {
 		if  ((shres_state[n] == SHRES_SECURE) ||

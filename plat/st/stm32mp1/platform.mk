@@ -10,6 +10,10 @@ BL2_AT_EL3		:=	1
 USE_COHERENT_MEM	:=	0
 MULTI_CONSOLE_API	:=	1
 
+# Add specific ST version
+ST_VERSION 		:=	r1.5
+VERSION_STRING		:=	v${VERSION_MAJOR}.${VERSION_MINOR}-${ST_VERSION}(${BUILD_TYPE}):${BUILD_STRING}
+
 # Please don't increment this value without good understanding of
 # the monotonic counter
 STM32_TF_VERSION	?=	0
@@ -42,6 +46,25 @@ PLAT_PARTITION_MAX_ENTRIES	:=	$(shell echo $$(($(STM32_TF_A_COPIES) + 1)))
 endif
 $(eval $(call add_define,PLAT_PARTITION_MAX_ENTRIES))
 
+STM32MP_BOOT_ONLY		?=	0
+STM32MP_FLASHLOADER_ONLY	?=	0
+
+ifeq (${STM32MP_BOOT_ONLY},1)
+ifeq (${STM32MP_FLASHLOADER_ONLY},1)
+$(error "You cannot choose both STM32MP_BOOT_ONLY and STM32MP_FLASHLOADER_ONLY")
+endif
+STM32MP_BOOT_DEVICES		=	1
+STM32MP_FLASHLOADER		=	0
+endif
+ifeq (${STM32MP_FLASHLOADER_ONLY},1)
+STM32MP_BOOT_DEVICES		=	0
+STM32MP_FLASHLOADER		=	1
+endif
+
+STM32MP_BOOT_DEVICES		?=	1
+STM32MP_FLASHLOADER		?=	1
+
+ifeq (${STM32MP_BOOT_DEVICES},1)
 # Boot devices
 STM32MP1_QSPI_NOR	:=	1
 $(eval $(call add_define,STM32MP1_QSPI_NOR))
@@ -57,9 +80,15 @@ $(eval $(call add_define,STM32MP1_QSPI_NAND))
 ifeq ($(filter 1,${STM32MP1_QSPI_NOR} ${STM32MP_FMC_NAND} ${STM32MP_EMMC} ${STM32MP_SDMMC}),)
 $(error "No boot device driver is enabled")
 endif
+endif #STM32MP_BOOT_DEVICES
+
+ifeq (${STM32MP_FLASHLOADER},1)
+STM32MP_USB		:=	1
+$(eval $(call add_define,STM32MP_USB))
 
 STM32MP_UART_PROGRAMMER	:=	1
 $(eval $(call add_define,STM32MP_UART_PROGRAMMER))
+endif #STM32MP_FLASHLOADER
 
 PLAT_INCLUDES		:=	-Iinclude/common/tbbr
 PLAT_INCLUDES		+=	-Iinclude/drivers/partition
@@ -68,8 +97,6 @@ PLAT_INCLUDES		+=	-Iplat/st/common/include/
 PLAT_INCLUDES		+=	-Iplat/st/stm32mp1/include/
 
 PLAT_INCLUDES		+=	-Iinclude/lib/usb
-
-STM32MP_USB		:=	1
 
 # Device tree
 DTB_FILE_NAME		?=	stm32mp157c-ev1.dtb
@@ -114,7 +141,8 @@ PLAT_BL_COMMON_SOURCES	+=	${LIBFDT_SRCS}						\
 				plat/st/stm32mp1/stm32mp1_dbgmcu.c			\
 				plat/st/stm32mp1/stm32mp1_helper.S			\
 				plat/st/stm32mp1/stm32mp1_security.c			\
-				plat/st/stm32mp1/stm32mp1_shared_resources.c
+				plat/st/stm32mp1/stm32mp1_shared_resources.c 		\
+				plat/st/stm32mp1/stm32mp1_syscfg.c
 
 BL2_SOURCES		+=	drivers/io/io_block.c					\
 				drivers/io/io_dummy.c					\
@@ -123,8 +151,7 @@ BL2_SOURCES		+=	drivers/io/io_block.c					\
 				drivers/st/io/io_stm32image.c				\
 				plat/st/common/bl2_io_storage.c				\
 				plat/st/common/stm32mp_auth.c				\
-				plat/st/stm32mp1/bl2_plat_setup.c 			\
-				plat/st/stm32mp1/stm32mp1_syscfg.c
+				plat/st/stm32mp1/bl2_plat_setup.c
 
 ifeq (${STM32MP1_QSPI_NOR},1)
 BL2_SOURCES		+=	drivers/st/qspi/io_qspi.c
@@ -155,14 +182,12 @@ BL2_SOURCES		+=	common/desc_image_load.c				\
 				plat/st/stm32mp1/plat_bl2_mem_params_desc.c		\
 				plat/st/stm32mp1/plat_image_load.c
 
-ifneq (${STM32MP_USB},0)
+ifeq (${STM32MP_USB},1)
 BL2_SOURCES		+=	drivers/st/io/io_programmer_st_usb.c			\
 				drivers/st/usb_dwc2/usb_dwc2.c				\
 				lib/usb/usb_core.c					\
 				lib/usb/usb_st_dfu.c					\
 				plat/st/stm32mp1/stm32mp1_usb_desc.c
-
-TF_CFLAGS		+=	-DSTM32MP_USB
 endif
 
 ifeq ($(AARCH32_SP),optee)

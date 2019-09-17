@@ -106,12 +106,9 @@ int fdt_get_interrupt(int node, const fdt32_t **array, int *len, bool *extended)
 		}
 		break;
 
-	case DT_SHARED:
+	default:
 		*array = fdt_getprop(fdt, node, "secure-interrupts", len);
 		break;
-
-	default:
-		return -FDT_ERR_NOTFOUND;
 	}
 
 	if (*array == NULL) {
@@ -429,7 +426,7 @@ uintptr_t dt_get_pwr_base(void)
  ******************************************************************************/
 uint32_t dt_get_pwr_vdd_voltage(void)
 {
-	int node;
+	int node, pwr_regulators_node;
 	const fdt32_t *cuint;
 
 	node = fdt_node_offset_by_compatible(fdt, -1, DT_PWR_COMPAT);
@@ -438,7 +435,13 @@ uint32_t dt_get_pwr_vdd_voltage(void)
 		return 0;
 	}
 
-	cuint = fdt_getprop(fdt, node, "pwr-supply", NULL);
+	pwr_regulators_node = fdt_subnode_offset(fdt, node, "pwr-regulators");
+	if (node < 0) {
+		INFO("%s: Cannot read pwr-regulators node in DT\n", __func__);
+		return 0;
+	}
+
+	cuint = fdt_getprop(fdt, pwr_regulators_node, "vdd-supply", NULL);
 	if (cuint == NULL) {
 		return 0;
 	}

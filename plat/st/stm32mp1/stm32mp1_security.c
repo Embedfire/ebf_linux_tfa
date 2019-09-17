@@ -30,7 +30,8 @@ static void init_tzc400(void)
 	tzc400_disable_filters();
 
 #ifdef AARCH32_SP_OPTEE
-	/* Region 1 set to cover all non-secure DRAM at 0xC000_0000. Apply the
+	/*
+	 * Region 1 set to cover all non-secure DRAM at 0xC000_0000. Apply the
 	 * same configuration to all filters in the TZC.
 	 */
 	region_base = ddr_base;
@@ -38,7 +39,7 @@ static void init_tzc400(void)
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 1,
 			region_base,
 			region_top,
-			0,
+			TZC_REGION_S_NONE,
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_A7_ID) |
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_GPU_ID) |
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_LCD_ID) |
@@ -66,7 +67,7 @@ static void init_tzc400(void)
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 3,
 			region_base,
 			region_top,
-			0,
+			TZC_REGION_S_NONE,
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_A7_ID) |
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_GPU_ID) |
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_LCD_ID) |
@@ -79,7 +80,8 @@ static void init_tzc400(void)
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_ETH_ID) |
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_DAP_ID));
 #else
-	/* Region 1 set to cover all DRAM at 0xC000_0000. Apply the
+	/*
+	 * Region 1 set to cover all DRAM at 0xC000_0000. Apply the
 	 * same configuration to all filters in the TZC.
 	 */
 	region_base = ddr_base;
@@ -87,7 +89,7 @@ static void init_tzc400(void)
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 1,
 			region_base,
 			region_top,
-			TZC_REGION_S_RDWR,
+			TZC_REGION_S_NONE,
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_A7_ID) |
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_GPU_ID) |
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_LCD_ID) |
@@ -121,10 +123,7 @@ static void early_init_tzc400(void)
 
 	tzc400_disable_filters();
 
-	/*
-	 * Region 1 set to cover Non-Secure DRAM at 0x8000_0000. Apply the
-	 * same configuration to all filters in the TZC.
-	 */
+	/* Region 1 set to cover Non-Secure DRAM at 0xC000_0000 */
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 1,
 				STM32MP_DDR_BASE,
 				STM32MP_DDR_BASE +

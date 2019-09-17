@@ -149,7 +149,9 @@
 };
 
 &pwr {
-	pwr-supply = <&vdd>;
+	pwr-regulators {
+		vdd-supply = <&vdd>;
+	};
 };
 
 &rng1 {
@@ -269,7 +271,7 @@
 		CLK_UART6_HSI
 		CLK_UART78_HSI
 		CLK_SPDIF_PLL4P
-		CLK_FDCAN_PLL4Q
+		CLK_FDCAN_PLL4R
 		CLK_SAI1_PLL3Q
 		CLK_SAI2_PLL3Q
 		CLK_SAI3_PLL3Q
@@ -306,6 +308,14 @@
 };
 
 /* Security specific */
+&bsec {
+	board_id: board_id@ec {
+		reg = <0xec 0x4>;
+		status = "okay";
+		secure-status = "okay";
+	};
+};
+
 &etzpc {
 	st,decprot = <
 		DECPROT(STM32MP1_ETZPC_USART1_ID, DECPROT_NS_RW, DECPROT_UNLOCK)
@@ -335,7 +345,7 @@
 &timers15 {
 	secure-status = "okay";
 	st,hsi-cal-input = <7>;
-	st,csi_cal-input = <8>;
+	st,csi-cal-input = <8>;
 };
 
 /* Low-power states of regulators */

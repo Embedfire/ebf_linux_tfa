@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -159,7 +159,7 @@ enum {
 	IMG_IDX_NUM
 };
 
-static struct stm32image_device_info stm32image_dev_info_spec = {
+static struct stm32image_device_info stm32image_dev_info_spec __unused = {
 	.lba_size = MMC_BLOCK_SIZE,
 	.part_info[IMG_IDX_BL33] = {
 		.name = BL33_IMAGE_NAME,
@@ -186,7 +186,7 @@ static io_block_spec_t stm32image_block_spec = {
 	.length = 0,
 };
 
-static const io_dev_connector_t *stm32image_dev_con;
+static const io_dev_connector_t *stm32image_dev_con __unused;
 
 static int open_dummy(const uintptr_t spec);
 static int open_image(const uintptr_t spec);
@@ -305,7 +305,7 @@ static void print_boot_device(boot_api_context_t *boot_context)
 	}
 }
 
-#if STM32MP_EMMC || STM32MP_SDMMC
+#if STM32MP_SDMMC
 static void print_bootrom_sd_status(boot_api_context_t *boot_context)
 {
 	if (boot_context->sd_err_internal_timeout_cnt != 0U) {
@@ -338,7 +338,9 @@ static void print_bootrom_sd_status(boot_api_context_t *boot_context)
 		     boot_context->sd_overall_retry_cnt);
 	}
 }
+#endif
 
+#if STM32MP_EMMC
 static void print_bootrom_emmc_status(boot_api_context_t *boot_context)
 {
 	INFO("BootROM: %d (0x%x) bytes copied from eMMC\n",
@@ -399,24 +401,295 @@ static void print_bootrom_emmc_status(boot_api_context_t *boot_context)
 }
 #endif
 
-
-void stm32mp_io_setup(void)
+#if STM32MP_EMMC || STM32MP_SDMMC
+static void boot_mmc(enum mmc_device_type mmc_dev_type,
+		     uint16_t boot_interface_instance)
 {
 	int io_result __unused;
 	uint8_t idx;
 	struct stm32image_part_info *part;
-#if STM32MP_UART_PROGRAMMER
-	uintptr_t uart_addr;
-#endif
-#if STM32MP_SDMMC || STM32MP_EMMC
 	struct stm32_sdmmc2_params params;
 	struct mmc_device_info device_info;
-	uintptr_t mmc_default_instance;
 	const partition_entry_t *entry;
+
+	zeromem(&device_info, sizeof(struct mmc_device_info));
+	zeromem(&params, sizeof(struct stm32_sdmmc2_params));
+
+	device_info.mmc_dev_type = mmc_dev_type;
+
+	switch (boot_interface_instance) {
+	case 1:
+		params.reg_base = STM32MP_SDMMC1_BASE;
+		break;
+	case 2:
+		params.reg_base = STM32MP_SDMMC2_BASE;
+		break;
+	case 3:
+		params.reg_base = STM32MP_SDMMC3_BASE;
+		break;
+	default:
+		WARN("SDMMC instance not found, using default\n");
+		if (mmc_dev_type == MMC_IS_SD) {
+			params.reg_base = STM32MP_SDMMC1_BASE;
+		} else {
+			params.reg_base = STM32MP_SDMMC2_BASE;
+		}
+		break;
+	}
+
+	params.device_info = &device_info;
+	if (stm32_sdmmc2_mmc_init(&params) != 0) {
+		ERROR("SDMMC%u init failed\n", boot_interface_instance);
+		panic();
+	}
+
+	/* Open MMC as a block device to read GPT table */
+	io_result = register_io_dev_block(&mmc_dev_con);
+	if (io_result != 0) {
+		panic();
+	}
+
+	io_result = io_dev_open(mmc_dev_con, (uintptr_t)&mmc_block_dev_spec,
+				&storage_dev_handle);
+	assert(io_result == 0);
+
+	partition_init(GPT_IMAGE_ID);
+
+	io_result = io_dev_close(storage_dev_handle);
+	assert(io_result == 0);
+
+	stm32image_dev_info_spec.device_size =
+		stm32_sdmmc2_mmc_get_device_size();
+
+	for (idx = 0U; idx < IMG_IDX_NUM; idx++) {
+		part = &stm32image_dev_info_spec.part_info[idx];
+		entry = get_partition_entry(part->name);
+		if (entry == NULL) {
+			ERROR("Partition %s not found\n", part->name);
+			panic();
+		}
+
+		part->part_offset = entry->start;
+		part->bkp_offset = 0U;
+	}
+
+	/*
+	 * Re-open MMC with io_mmc, for better perfs compared to
+	 * io_block.
+	 */
+	io_result = register_io_dev_mmc(&mmc_dev_con);
+	assert(io_result == 0);
+
+	io_result = io_dev_open(mmc_dev_con, 0, &storage_dev_handle);
+	assert(io_result == 0);
+
+	io_result = register_io_dev_stm32image(&stm32image_dev_con);
+	assert(io_result == 0);
+
+	io_result = io_dev_open(stm32image_dev_con,
+				(uintptr_t)&stm32image_dev_info_spec,
+				&image_dev_handle);
+	assert(io_result == 0);
+}
 #endif
+
+#if STM32MP1_QSPI_NOR
+static void boot_qspi_nor(boot_api_context_t *boot_context)
+{
+	int io_result __unused;
+	uint8_t idx;
+	struct stm32image_part_info *part;
+
+	io_result = register_io_dev_qspi(&qspi_dev_con);
+	assert(io_result == 0);
+
+	if (boot_context->boot_interface_instance != 1U) {
+		WARN("NOR instance not found, using default\n");
+	}
+
+	qspi_dev_spec.instance = (QUADSPI_TypeDef *)STM32MP1_QSPI1_BASE;
+	qspi_dev_spec.is_dual = boot_context->nor_isdual;
+
+	/* Open connections to devices */
+	io_result = io_dev_open(qspi_dev_con,
+				(uintptr_t)&qspi_dev_spec,
+				&storage_dev_handle);
+	assert(io_result == 0);
+
+	stm32image_dev_info_spec.device_size = QSPI_NOR_MAX_SIZE;
+	stm32image_dev_info_spec.lba_size = QSPI_NOR_LBA_SIZE;
+
+	idx = IMG_IDX_BL33;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NOR_BL33_OFFSET;
+	part->bkp_offset = QSPI_NOR_BLK_SIZE;
+
+#ifdef AARCH32_SP_OPTEE
+	idx = IMG_IDX_OPTEE_HEADER;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NOR_TEEH_OFFSET;
+	part->bkp_offset = QSPI_NOR_BLK_SIZE;
+
+	idx = IMG_IDX_OPTEE_PAGED;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NOR_TEED_OFFSET;
+	part->bkp_offset = QSPI_NOR_BLK_SIZE;
+
+	idx = IMG_IDX_OPTEE_PAGER;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NOR_TEEX_OFFSET;
+	part->bkp_offset = QSPI_NOR_BLK_SIZE;
+#endif
+
+	io_result = register_io_dev_stm32image(&stm32image_dev_con);
+	assert(io_result == 0);
+
+	io_result = io_dev_open(stm32image_dev_con,
+				(uintptr_t)&stm32image_dev_info_spec,
+				&image_dev_handle);
+	assert(io_result == 0);
+}
+#endif
+
+#if STM32MP_FMC_NAND
+static void boot_fmc_nand(boot_api_context_t *boot_context)
+{
+	int io_result __unused;
+	uint8_t idx;
+	struct stm32image_part_info *part;
+
+	/* Register the IO devices on this platform */
+	io_result = register_io_dev_nand(&nand_dev_con);
+	assert(io_result == 0);
+
+	nand_dev_spec.Instance = (FMC_TypeDef *)STM32MP_FMC_BASE;
+	nand_dev_spec.Info.PageSize = boot_context->nand_page_size;
+	nand_dev_spec.Info.BlockSize = boot_context->nand_block_size;
+	nand_dev_spec.Info.BlockNb = boot_context->nand_block_nb;
+	nand_dev_spec.Info.BusWidth = boot_context->nand_data_width;
+	nand_dev_spec.Info.ECCcorrectability =
+		boot_context->nand_ecc_bits;
+
+	/* Open connections to devices */
+	io_result = io_dev_open(nand_dev_con, (uintptr_t)&nand_dev_spec,
+				&storage_dev_handle);
+	assert(io_result == 0);
+
+	stm32image_dev_info_spec.device_size =
+		nand_dev_spec.Info.PageSize *
+		nand_dev_spec.Info.BlockSize *
+		nand_dev_spec.Info.BlockNb;
+	stm32image_dev_info_spec.lba_size = BCH_PAGE_SECTOR;
+
+	idx = IMG_IDX_BL33;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NAND_BL33_OFFSET;
+	part->bkp_offset = nand_dev_spec.Info.PageSize *
+		nand_dev_spec.Info.BlockSize;
+
+#ifdef AARCH32_SP_OPTEE
+	idx = IMG_IDX_OPTEE_HEADER;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NAND_TEEH_OFFSET;
+	part->bkp_offset = nand_dev_spec.Info.PageSize *
+		nand_dev_spec.Info.BlockSize;
+
+	idx = IMG_IDX_OPTEE_PAGED;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NAND_TEED_OFFSET;
+	part->bkp_offset = nand_dev_spec.Info.PageSize *
+		nand_dev_spec.Info.BlockSize;
+
+	idx = IMG_IDX_OPTEE_PAGER;
+	part = &stm32image_dev_info_spec.part_info[idx];
+	part->part_offset = STM32MP_NAND_TEEX_OFFSET;
+	part->bkp_offset = nand_dev_spec.Info.PageSize *
+		nand_dev_spec.Info.BlockSize;
+#endif
+
+	io_result = register_io_dev_stm32image(&stm32image_dev_con);
+	assert(io_result == 0);
+
+	io_result = io_dev_open(stm32image_dev_con,
+				(uintptr_t)&stm32image_dev_info_spec,
+				&image_dev_handle);
+	assert(io_result == 0);
+}
+#endif
+
+#if STM32MP_UART_PROGRAMMER
+static void flash_uart(uint16_t boot_interface_instance)
+{
+	int io_result __unused;
+	uintptr_t uart_addr;
+
+	/* Register the IO devices on this platform */
+	io_result = register_io_dev_uart(&uart_dev_con);
+	assert(io_result == 0);
+
+	uart_programmer.Init.WordLength = UART_WORDLENGTH_9B;
+	uart_programmer.Init.Parity = UART_PARITY_EVEN;
+	uart_addr = get_uart_address(boot_interface_instance);
+
+	if (uart_addr != 0U) {
+		uart_programmer.Instance = (USART_TypeDef *)uart_addr;
+	} else {
+		WARN("UART instance not found, using default\n");
+		uart_programmer.Instance = (USART_TypeDef *)USART2_BASE;
+	}
+
+	/* Open connections to devices */
+	io_result = io_dev_open(uart_dev_con, (uintptr_t)&uart_programmer,
+				&image_dev_handle);
+	assert(!io_result);
+}
+#endif
+
 #ifdef STM32MP_USB
-	struct usb_ctx *usb_context;
+static void flash_usb(struct usb_ctx *usb_context)
+{
+	int io_result __unused;
+
+	pcd_handle.in_ep[0].maxpacket = 0x40;
+	pcd_handle.out_ep[0].maxpacket = 0x40;
+
+	pcd_handle.state = HAL_PCD_STATE_READY;
+
+	usb_core_handle.data = &pcd_handle;
+
+	usb_dwc2_init_driver(&usb_core_handle,
+			     (uint32_t *)USB_OTG_BASE);
+
+	usb_dfu_register_callback(&usb_core_handle);
+
+	stm32mp_usb_init_desc(&usb_core_handle);
+
+	usb_core_handle.ep_in[0].maxpacket = 0x40;
+	usb_core_handle.ep_out[0].maxpacket = 0x40;
+
+	usb_core_handle.ep0_state =
+		usb_context->pusbd_device_ctx->ep0_state;
+	usb_core_handle.dev_state = USBD_STATE_CONFIGURED;
+
+	usb_core_handle.class_data = &usb_dfu_handle;
+	usb_dfu_handle.dev_state = DFU_STATE_IDLE;
+
+	/* Register the IO devices on this platform */
+	io_result = register_io_dev_usb(&usb_dev_con);
+	assert(io_result == 0);
+
+	/* Open connections to devices */
+	io_result = io_dev_open(usb_dev_con,
+				(uintptr_t)&usb_core_handle,
+				&image_dev_handle);
+
+	assert(io_result == 0);
+}
 #endif
+
+void stm32mp_io_setup(void)
+{
+	int io_result __unused;
 	boot_api_context_t *boot_context =
 		(boot_api_context_t *)stm32mp_get_boot_ctx_address();
 
@@ -436,305 +709,36 @@ void stm32mp_io_setup(void)
 	assert(io_result == 0);
 
 	switch (boot_context->boot_interface_selected) {
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_SD:
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC:
-		dmbsy();
-
-#if STM32MP_EMMC || STM32MP_SDMMC
-		memset(&params, 0, sizeof(struct stm32_sdmmc2_params));
-
-		if (boot_context->boot_interface_selected ==
-		    BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC) {
-			device_info.mmc_dev_type = MMC_IS_EMMC;
-			print_bootrom_emmc_status(boot_context);
-#if STM32MP_EMMC
-			mmc_default_instance = STM32MP_SDMMC2_BASE;
-#else
-			ERROR("MMC driver is not enabled\n");
-			panic();
-#endif
-		} else {
-			device_info.mmc_dev_type = MMC_IS_SD;
-			print_bootrom_sd_status(boot_context);
 #if STM32MP_SDMMC
-			mmc_default_instance = STM32MP_SDMMC1_BASE;
-#else
-			ERROR("MMC driver is not enabled\n");
-			panic();
-#endif
-		}
-
-		switch (boot_context->boot_interface_instance) {
-		case 1:
-			params.reg_base = STM32MP_SDMMC1_BASE;
-			break;
-		case 2:
-			params.reg_base = STM32MP_SDMMC2_BASE;
-			break;
-		case 3:
-			params.reg_base = STM32MP_SDMMC3_BASE;
-			break;
-		default:
-			WARN("SDMMC instance not found, using default\n");
-			params.reg_base = mmc_default_instance;
-			break;
-		}
-
-		params.device_info = &device_info;
-		if (stm32_sdmmc2_mmc_init(&params) != 0) {
-			ERROR("SDMMC%u init failed\n",
-			      boot_context->boot_interface_instance);
-			panic();
-		}
-
-		/* Open MMC as a block device to read GPT table */
-		io_result = register_io_dev_block(&mmc_dev_con);
-		if (io_result != 0) {
-			panic();
-		}
-
-		io_result = io_dev_open(mmc_dev_con,
-					(uintptr_t)&mmc_block_dev_spec,
-					&storage_dev_handle);
-		assert(io_result == 0);
-
-		partition_init(GPT_IMAGE_ID);
-
-		io_result = io_dev_close(storage_dev_handle);
-		assert(io_result == 0);
-
-		stm32image_dev_info_spec.device_size =
-			stm32_sdmmc2_mmc_get_device_size();
-
-		for (idx = 0U; idx < IMG_IDX_NUM; idx++) {
-			part = &stm32image_dev_info_spec.part_info[idx];
-			entry = get_partition_entry(part->name);
-			if (entry == NULL) {
-				ERROR("Partition %s not found\n",
-				      part->name);
-				panic();
-			}
-
-			part->part_offset = entry->start;
-			part->bkp_offset = 0U;
-		}
-
-		/*
-		 * Re-open MMC with io_mmc, for better perfs compared to
-		 * io_block.
-		 */
-		io_result = register_io_dev_mmc(&mmc_dev_con);
-		assert(io_result == 0);
-
-		io_result = io_dev_open(mmc_dev_con, 0, &storage_dev_handle);
-		assert(io_result == 0);
-
-		io_result = register_io_dev_stm32image(&stm32image_dev_con);
-		assert(io_result == 0);
-
-		io_result = io_dev_open(stm32image_dev_con,
-					(uintptr_t)&stm32image_dev_info_spec,
-					&image_dev_handle);
-		assert(io_result == 0);
-#else /* STM32MP_EMMC || STM32MP_SDMMC */
-		ERROR("EMMC or SDMMC driver not enabled\n");
-		panic();
-#endif /* STM32MP_EMMC || STM32MP_SDMMC */
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_SD:
+		print_bootrom_sd_status(boot_context);
+		boot_mmc(MMC_IS_SD, boot_context->boot_interface_instance);
 		break;
-
+#endif
+#if STM32MP_EMMC
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC:
+		print_bootrom_emmc_status(boot_context);
+		boot_mmc(MMC_IS_EMMC, boot_context->boot_interface_instance);
+		break;
+#endif
 #if STM32MP1_QSPI_NOR
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_QSPI:
-		dmbsy();
-
-		io_result = register_io_dev_qspi(&qspi_dev_con);
-
-		assert(io_result == 0);
-		switch (boot_context->boot_interface_instance) {
-		case 1:
-			qspi_dev_spec.instance =
-				(QUADSPI_TypeDef *)STM32MP1_QSPI1_BASE;
-			break;
-		default:
-			WARN("NOR instance not found, using default\n");
-			qspi_dev_spec.instance =
-				(QUADSPI_TypeDef *)STM32MP1_QSPI1_BASE;
-			break;
-		}
-		qspi_dev_spec.is_dual = boot_context->nor_isdual;
-
-		/* Open connections to devices and cache the handles */
-		io_result = io_dev_open(qspi_dev_con,
-					(uintptr_t)&qspi_dev_spec,
-					&storage_dev_handle);
-		assert(io_result == 0);
-
-		stm32image_dev_info_spec.device_size = QSPI_NOR_MAX_SIZE;
-		stm32image_dev_info_spec.lba_size = QSPI_NOR_LBA_SIZE;
-
-		idx = IMG_IDX_BL33;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NOR_BL33_OFFSET;
-		part->bkp_offset = QSPI_NOR_BLK_SIZE;
-
-#ifdef AARCH32_SP_OPTEE
-		idx = IMG_IDX_OPTEE_HEADER;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NOR_TEEH_OFFSET;
-		part->bkp_offset = QSPI_NOR_BLK_SIZE;
-
-		idx = IMG_IDX_OPTEE_PAGED;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NOR_TEED_OFFSET;
-		part->bkp_offset = QSPI_NOR_BLK_SIZE;
-
-		idx = IMG_IDX_OPTEE_PAGER;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NOR_TEEX_OFFSET;
-		part->bkp_offset = QSPI_NOR_BLK_SIZE;
-#endif
-
-		io_result = register_io_dev_stm32image(&stm32image_dev_con);
-		assert(io_result == 0);
-
-		io_result = io_dev_open(stm32image_dev_con,
-					(uintptr_t)&stm32image_dev_info_spec,
-					&image_dev_handle);
-		assert(io_result == 0);
+		boot_qspi_nor(boot_context);
 		break;
 #endif
-
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_FMC:
-
 #if STM32MP_FMC_NAND
-		dmbsy();
-
-		/* Register the IO devices on this platform */
-		io_result = register_io_dev_nand(&nand_dev_con);
-		assert(io_result == 0);
-
-		nand_dev_spec.Instance = (FMC_TypeDef *)STM32MP_FMC_BASE;
-		nand_dev_spec.Info.PageSize = boot_context->nand_page_size;
-		nand_dev_spec.Info.BlockSize = boot_context->nand_block_size;
-		nand_dev_spec.Info.BlockNb = boot_context->nand_block_nb;
-		nand_dev_spec.Info.BusWidth = boot_context->nand_data_width;
-		nand_dev_spec.Info.ECCcorrectability =
-			boot_context->nand_ecc_bits;
-
-		/* Open connections to devices and cache the handles */
-		io_result = io_dev_open(nand_dev_con, (uintptr_t)&nand_dev_spec,
-					&storage_dev_handle);
-		assert(io_result == 0);
-
-		stm32image_dev_info_spec.device_size =
-			nand_dev_spec.Info.PageSize *
-			nand_dev_spec.Info.BlockSize *
-			nand_dev_spec.Info.BlockNb;
-		stm32image_dev_info_spec.lba_size = BCH_PAGE_SECTOR;
-
-		idx = IMG_IDX_BL33;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NAND_BL33_OFFSET;
-		part->bkp_offset = nand_dev_spec.Info.PageSize *
-			nand_dev_spec.Info.BlockSize;
-
-#ifdef AARCH32_SP_OPTEE
-		idx = IMG_IDX_OPTEE_HEADER;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NAND_TEEH_OFFSET;
-		part->bkp_offset = nand_dev_spec.Info.PageSize *
-			nand_dev_spec.Info.BlockSize;
-
-		idx = IMG_IDX_OPTEE_PAGED;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NAND_TEED_OFFSET;
-		part->bkp_offset = nand_dev_spec.Info.PageSize *
-			nand_dev_spec.Info.BlockSize;
-
-		idx = IMG_IDX_OPTEE_PAGER;
-		part = &stm32image_dev_info_spec.part_info[idx];
-		part->part_offset = STM32MP_NAND_TEEX_OFFSET;
-		part->bkp_offset = nand_dev_spec.Info.PageSize *
-			nand_dev_spec.Info.BlockSize;
-#endif
-
-		io_result = register_io_dev_stm32image(&stm32image_dev_con);
-		assert(io_result == 0);
-
-		io_result = io_dev_open(stm32image_dev_con,
-					(uintptr_t)&stm32image_dev_info_spec,
-					&image_dev_handle);
-		assert(io_result == 0);
-#else
-		ERROR("FMC NAND driver is not enabled\n");
-		panic();
-#endif
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_FMC:
+		boot_fmc_nand(boot_context);
 		break;
-
+#endif
 #if STM32MP_UART_PROGRAMMER
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_SERIAL_UART:
-
-		/* Register the IO devices on this platform */
-		io_result = register_io_dev_uart(&uart_dev_con);
-		assert(io_result == 0);
-
-		uart_programmer.Init.WordLength = UART_WORDLENGTH_9B;
-		uart_programmer.Init.Parity = UART_PARITY_EVEN;
-		uart_addr =
-			get_uart_address(boot_context->boot_interface_instance);
-
-		if (uart_addr) {
-			uart_programmer.Instance = (USART_TypeDef *)uart_addr;
-		} else {
-			WARN("UART instance not found, using default\n");
-			uart_programmer.Instance = (USART_TypeDef *)USART2_BASE;
-		}
-
-		/* Open connections to devices and cache the handles */
-		io_result = io_dev_open(uart_dev_con,
-					(uintptr_t)&uart_programmer,
-					&image_dev_handle);
-		assert(!io_result);
+		flash_uart(boot_context->boot_interface_instance);
 		break;
 #endif
-
 #ifdef STM32MP_USB
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_SERIAL_USB:
-		usb_context = (struct usb_ctx *)boot_context->usb_context;
-
-		pcd_handle.in_ep[0].maxpacket = 0x40;
-		pcd_handle.out_ep[0].maxpacket = 0x40;
-
-		pcd_handle.state = HAL_PCD_STATE_READY;
-
-		usb_core_handle.data = &pcd_handle;
-
-		usb_dwc2_init_driver(&usb_core_handle,
-				     (uint32_t *)USB_OTG_BASE);
-
-		usb_dfu_register_callback(&usb_core_handle);
-
-		stm32mp_usb_init_desc(&usb_core_handle);
-
-		usb_core_handle.ep_in[0].maxpacket = 0x40;
-		usb_core_handle.ep_out[0].maxpacket = 0x40;
-
-		usb_core_handle.ep0_state =
-			usb_context->pusbd_device_ctx->ep0_state;
-		usb_core_handle.dev_state = USBD_STATE_CONFIGURED;
-
-		usb_core_handle.class_data = &usb_dfu_handle;
-		usb_dfu_handle.dev_state = DFU_STATE_IDLE;
-
-		/* Register the IO devices on this platform */
-		io_result = register_io_dev_usb(&usb_dev_con);
-		assert(io_result == 0);
-
-		/* Open connections to devices and cache the handles */
-		io_result = io_dev_open(usb_dev_con,
-					(uintptr_t)&usb_core_handle,
-					&image_dev_handle);
-
-		assert(io_result == 0);
+		flash_usb((struct usb_ctx *)boot_context->usb_context);
 		break;
 #endif
 #ifdef STM32MP1_QSPI_NAND

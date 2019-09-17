@@ -79,18 +79,18 @@ struct i2c_timing_s {
 	bool is_saved;
 };
 
-/**
- * All these values are coming from I2C Specification, Version 6.0, 4th of
- * April 2014.
+/*
+ * I2C specification values as per version 6.0, 4th of April 2014 [1],
+ * table 10 page 48: Characteristics of the SDA and SCL bus lines for
+ * Standard, Fast, and Fast-mode Plus I2C-bus devices.
  *
- * Table10. Characteristics of the SDA and SCL bus lines for Standard, Fast,
- * and Fast-mode Plus I2C-bus devices.
+ * [1] https://www.i2c-bus.org/specification/
  */
 static const struct i2c_spec_s i2c_specs[] = {
 	[I2C_SPEED_STANDARD] = {
 		.rate = STANDARD_RATE,
-		.rate_min = 8000,
-		.rate_max = 120000,
+		.rate_min = (STANDARD_RATE * 80) / 100,
+		.rate_max = (STANDARD_RATE * 120) / 100,
 		.fall_max = 300,
 		.rise_max = 1000,
 		.hddat_min = 0,
@@ -101,8 +101,8 @@ static const struct i2c_spec_s i2c_specs[] = {
 	},
 	[I2C_SPEED_FAST] = {
 		.rate = FAST_RATE,
-		.rate_min = 320000,
-		.rate_max = 480000,
+		.rate_min = (FAST_RATE * 80) / 100,
+		.rate_max = (FAST_RATE * 120) / 100,
 		.fall_max = 300,
 		.rise_max = 300,
 		.hddat_min = 0,
@@ -113,8 +113,8 @@ static const struct i2c_spec_s i2c_specs[] = {
 	},
 	[I2C_SPEED_FAST_PLUS] = {
 		.rate = FAST_PLUS_RATE,
-		.rate_min = 800000,
-		.rate_max = 1200000,
+		.rate_min = (FAST_PLUS_RATE * 80) / 100,
+		.rate_max = (FAST_PLUS_RATE * 120) / 100,
 		.fall_max = 100,
 		.rise_max = 120,
 		.hddat_min = 0,
@@ -124,6 +124,9 @@ static const struct i2c_spec_s i2c_specs[] = {
 		.h_min = 260,
 	},
 };
+
+static uint32_t saved_timing;
+static unsigned long saved_frequency;
 
 static int i2c_request_memory_write(struct i2c_handle_s *hi2c,
 				    uint16_t dev_addr, uint16_t mem_addr,
@@ -376,12 +379,21 @@ static int i2c_setup_timing(struct i2c_handle_s *hi2c,
 			    uint32_t *timing)
 {
 	int rc = 0;
-	uint32_t clock_src;
+	unsigned long clock_src;
 
 	clock_src = stm32mp_clk_get_rate(hi2c->clock);
 	if (clock_src == 0U) {
 		ERROR("I2C clock rate is 0\n");
 		return -EINVAL;
+	}
+
+	/*
+	 * If the timing has already been computed, and the frequency is the
+	 * same as when it was computed, then use the saved timing.
+	 */
+	if (clock_src == saved_frequency) {
+		*timing = saved_timing;
+		return 0;
 	}
 
 	do {
@@ -403,13 +415,16 @@ static int i2c_setup_timing(struct i2c_handle_s *hi2c,
 		return rc;
 	}
 
-	VERBOSE("I2C Speed Mode(%i), Freq(%i), Clk Source(%i)\n",
+	VERBOSE("I2C Speed Mode(%i), Freq(%i), Clk Source(%li)\n",
 		init->speed_mode, i2c_specs[init->speed_mode].rate, clock_src);
 	VERBOSE("I2C Rise(%i) and Fall(%i) Time\n",
 		init->rise_time, init->fall_time);
 	VERBOSE("I2C Analog Filter(%s), DNF(%i)\n",
 		(init->analog_filter ? "On" : "Off"),
 		init->digital_filter_coef);
+
+	saved_timing = *timing;
+	saved_frequency = clock_src;
 
 	return 0;
 }

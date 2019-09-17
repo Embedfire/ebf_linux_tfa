@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -15,7 +15,25 @@
 #include <stm32_iwdg.h>
 #include <stm32mp_common.h>
 #include <stm32mp_dt.h>
+#include <stm32mp_reset.h>
 #include <xlat_tables_v2.h>
+
+/* Internal layout of the 32bit OTP word board_id */
+#define BOARD_ID_BOARD_NB_MASK		GENMASK(31, 16)
+#define BOARD_ID_BOARD_NB_SHIFT		16
+#define BOARD_ID_VARIANT_MASK		GENMASK(15, 12)
+#define BOARD_ID_VARIANT_SHIFT		12
+#define BOARD_ID_REVISION_MASK		GENMASK(11, 8)
+#define BOARD_ID_REVISION_SHIFT		8
+#define BOARD_ID_BOM_MASK		GENMASK(3, 0)
+
+#define BOARD_ID2NB(_id)		(((_id) & BOARD_ID_BOARD_NB_MASK) >> \
+					 BOARD_ID_BOARD_NB_SHIFT)
+#define BOARD_ID2VAR(_id)		(((_id) & BOARD_ID_VARIANT_MASK) >> \
+					 BOARD_ID_VARIANT_SHIFT)
+#define BOARD_ID2REV(_id)		(((_id) & BOARD_ID_REVISION_MASK) >> \
+					 BOARD_ID_REVISION_SHIFT)
+#define BOARD_ID2BOM(_id)		((_id) & BOARD_ID_BOM_MASK)
 
 #define MAP_ROM		MAP_REGION_FLAT(STM32MP_ROM_BASE, \
 					STM32MP_ROM_SIZE, \
@@ -119,9 +137,111 @@ uintptr_t get_uart_address(uint32_t instance_nb)
 }
 #endif
 
+#define ARM_CNTXCTL_IMASK	BIT(1)
+
+void stm32mp_mask_timer(void)
+{
+	/* Mask timer interrupts */
+	write_cntp_ctl(read_cntp_ctl() | ARM_CNTXCTL_IMASK);
+	write_cntv_ctl(read_cntv_ctl() | ARM_CNTXCTL_IMASK);
+}
+
+void __dead2 stm32mp_wait_cpu_reset(void)
+{
+	uint32_t id;
+
+	dcsw_op_all(DC_OP_CISW);
+	write_sctlr(read_sctlr() & ~SCTLR_C_BIT);
+	dcsw_op_all(DC_OP_CISW);
+	__asm__("clrex");
+
+	dsb();
+	isb();
+
+	for ( ; ; ) {
+		do {
+			id = plat_ic_get_pending_interrupt_id();
+
+			if (id <= MAX_SPI_ID) {
+				gicv2_end_of_interrupt(id);
+
+				plat_ic_disable_interrupt(id);
+			}
+		} while (id <= MAX_SPI_ID);
+
+		wfi();
+	}
+}
+
+/*
+ * tzc_source_ip contains the TZC transaction source IPs that need to be reset
+ * before a C-A7 subsystem is reset (i.e. independent reset):
+ * - C-A7 subsystem is reset separately later in the sequence,
+ * - C-M4 subsystem is not concerned here,
+ * - DAP is excluded for debug purpose,
+ * - IPs are stored with their ETZPC IDs (STM32MP1_ETZPC_MAX_ID if not
+ *   applicable) because some of them need to be reset only if they are not
+ *   configured in MCU isolation mode inside ETZPC device tree.
+ */
+struct tzc_source_ip {
+	uint32_t reset_id;
+	uint32_t clock_id;
+	uint32_t decprot_id;
+};
+
+#define _TZC_FIXED(res, clk)			\
+	{						\
+		.reset_id = (res),			\
+		.clock_id = (clk),			\
+		.decprot_id = STM32MP1_ETZPC_MAX_ID,	\
+	}
+
+#define _TZC_COND(res, clk, decprot)			\
+	{						\
+		.reset_id = (res),			\
+		.clock_id = (clk),			\
+		.decprot_id = (decprot),		\
+	}
+
+static const struct tzc_source_ip tzc_source_ip[] = {
+	_TZC_FIXED(LTDC_R, LTDC_PX),
+	_TZC_FIXED(GPU_R, GPU),
+	_TZC_FIXED(USBH_R, USBH),
+	_TZC_FIXED(SDMMC1_R, SDMMC1_K),
+	_TZC_FIXED(SDMMC2_R, SDMMC2_K),
+	_TZC_FIXED(MDMA_R, MDMA),
+	_TZC_COND(USBO_R, USBO_K, STM32MP1_ETZPC_OTG_ID),
+	_TZC_COND(SDMMC3_R, SDMMC3_K, STM32MP1_ETZPC_SDMMC3_ID),
+	_TZC_COND(ETHMAC_R, ETHMAC, STM32MP1_ETZPC_ETH_ID),
+	_TZC_COND(DMA1_R, DMA1, STM32MP1_ETZPC_DMA1_ID),
+	_TZC_COND(DMA2_R, DMA2, STM32MP1_ETZPC_DMA2_ID),
+};
+
 void __dead2 stm32mp_plat_reset(int cpu)
 {
 	uint32_t reg = RCC_MP_GRSTCSETR_MPUP0RST;
+	uint32_t id;
+
+	/* Mask timer interrupts */
+	stm32mp_mask_timer();
+
+	for (id = 0U; id < ARRAY_SIZE(tzc_source_ip); id++) {
+		if ((!stm32mp1_clk_is_enabled(tzc_source_ip[id].clock_id)) ||
+		    ((tzc_source_ip[id].decprot_id != STM32MP1_ETZPC_MAX_ID) &&
+		     (etzpc_get_decprot(tzc_source_ip[id].decprot_id) ==
+		      TZPC_DECPROT_MCU_ISOLATION))) {
+			continue;
+		}
+
+		if (tzc_source_ip[id].reset_id != GPU_R) {
+			stm32mp_reset_assert(tzc_source_ip[id].reset_id);
+			stm32mp_reset_deassert(tzc_source_ip[id].reset_id);
+		} else {
+			/* GPU reset automatically cleared by hardware */
+			mmio_setbits_32(stm32mp_rcc_base() + RCC_AHB6RSTSETR,
+					RCC_AHB6RSTSETR_GPURST);
+		}
+	}
 
 	if (stm32mp_is_single_core() == 0) {
 		unsigned int sec_cpu = (cpu == STM32MP_PRIMARY_CPU) ?
@@ -131,18 +251,19 @@ void __dead2 stm32mp_plat_reset(int cpu)
 		reg |= RCC_MP_GRSTCSETR_MPUP1RST;
 	}
 
+	do {
+		id = plat_ic_get_pending_interrupt_id();
+
+		if (id <= MAX_SPI_ID) {
+			gicv2_end_of_interrupt(id);
+
+			plat_ic_disable_interrupt(id);
+		}
+	} while (id <= MAX_SPI_ID);
+
 	mmio_write_32(stm32mp_rcc_base() + RCC_MP_GRSTCSETR, reg);
 
-	isb();
-	dsb();
-
-	/* Flush L1/L2 data caches */
-	write_sctlr(read_sctlr() & ~SCTLR_C_BIT);
-	dcsw_op_all(DC_OP_CISW);
-
-	for ( ; ; ) {
-		wfi();
-	}
+	stm32mp_wait_cpu_reset();
 }
 
 static uint32_t get_part_number(void)
@@ -237,23 +358,49 @@ void stm32mp_print_cpuinfo(void)
 
 void stm32mp_print_boardinfo(void)
 {
-	uint32_t board;
-	int res = 0;
+	uint32_t board_id = 0;
+	uint32_t board_otp;
+	int bsec_node, bsec_board_id_node;
+	void *fdt;
+	const fdt32_t *cuint;
 
-	if (bsec_shadow_read_otp(&board, BOARD_OTP) != BSEC_OK) {
-		ERROR("BSEC: PART_NUMBER_OTP Error\n");
-		res = -1;
+	if (fdt_get_address(&fdt) == 0) {
+		panic();
 	}
 
-	if ((res == 0) && (board != 0U)) {
-		char rev[1];
+	bsec_node = fdt_node_offset_by_compatible(fdt, -1, DT_BSEC_COMPAT);
+	if (bsec_node < 0) {
+		return;
+	}
 
-		*rev = ((board >> 8) & 0xF) - 1 + 'A';
+	bsec_board_id_node = fdt_subnode_offset(fdt, bsec_node, "board_id");
+	if (bsec_board_id_node <= 0) {
+		return;
+	}
+
+	cuint = fdt_getprop(fdt, bsec_board_id_node, "reg", NULL);
+	if (cuint == NULL) {
+		ERROR("board_id node without reg property\n");
+		panic();
+	}
+
+	board_otp = fdt32_to_cpu(*cuint) / sizeof(uint32_t);
+
+	if (bsec_shadow_read_otp(&board_id, board_otp) != BSEC_OK) {
+		ERROR("BSEC: PART_NUMBER_OTP Error\n");
+		return;
+	}
+
+	if (board_id != 0U) {
+		char rev[2];
+
+		rev[0] = BOARD_ID2REV(board_id) - 1 + 'A';
+		rev[1] = '\0';
 		NOTICE("Board: MB%04x Var%d Rev.%s-%02d\n",
-		       board >> 16,
-		       (board >> 12) & 0xF,
+		       BOARD_ID2NB(board_id),
+		       BOARD_ID2VAR(board_id),
 		       rev,
-		       board & 0xF);
+		       BOARD_ID2BOM(board_id));
 	}
 }
 
@@ -309,12 +456,12 @@ uint32_t stm32_iwdg_get_otp_config(uintptr_t base)
 		iwdg_cfg |= IWDG_HW_ENABLED;
 	}
 
-	if ((otp_value & BIT(idx + IWDG_FZ_STOP_POS)) == 0U) {
-		iwdg_cfg |= IWDG_ENABLE_ON_STOP;
+	if ((otp_value & BIT(idx + IWDG_FZ_STOP_POS)) != 0U) {
+		iwdg_cfg |= IWDG_DISABLE_ON_STOP;
 	}
 
-	if ((otp_value & BIT(idx + IWDG_FZ_STANDBY_POS)) == 0U) {
-		iwdg_cfg |= IWDG_ENABLE_ON_STANDBY;
+	if ((otp_value & BIT(idx + IWDG_FZ_STANDBY_POS)) != 0U) {
+		iwdg_cfg |= IWDG_DISABLE_ON_STANDBY;
 	}
 
 	return iwdg_cfg;
@@ -333,11 +480,11 @@ uint32_t stm32_iwdg_shadow_update(uintptr_t base, uint32_t flags)
 
 	idx = stm32_iwdg_get_instance(base);
 
-	if ((flags & IWDG_ENABLE_ON_STOP) != 0) {
+	if ((flags & IWDG_DISABLE_ON_STOP) != 0) {
 		otp |= BIT(idx + IWDG_FZ_STOP_POS);
 	}
 
-	if ((flags & IWDG_ENABLE_ON_STANDBY) != 0) {
+	if ((flags & IWDG_DISABLE_ON_STANDBY) != 0) {
 		otp |= BIT(idx + IWDG_FZ_STANDBY_POS);
 	}
 
@@ -347,8 +494,8 @@ uint32_t stm32_iwdg_shadow_update(uintptr_t base, uint32_t flags)
 	}
 
 	/* Sticky lock OTP_IWDG (read and write) */
-	if (!bsec_write_sr_lock(HW2_OTP, 1U) ||
-	    !bsec_write_sw_lock(HW2_OTP, 1U)) {
+	if ((bsec_set_sr_lock(HW2_OTP) != BSEC_OK) ||
+	    (bsec_set_sw_lock(HW2_OTP) != BSEC_OK)) {
 		return BSEC_LOCK_FAIL;
 	}
 

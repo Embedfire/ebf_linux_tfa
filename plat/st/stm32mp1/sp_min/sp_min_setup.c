@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -68,6 +68,8 @@ static void stm32_sgi1_it_handler(void)
 {
 	uint32_t id;
 
+	stm32mp_mask_timer();
+
 	gicv2_end_of_interrupt(ARM_IRQ_SEC_SGI_1);
 
 	do {
@@ -80,17 +82,19 @@ static void stm32_sgi1_it_handler(void)
 		}
 	} while (id <= MAX_SPI_ID);
 
+	stm32mp_wait_cpu_reset();
+}
 
-	isb();
-	dsb();
+static void configure_wakeup_interrupt(void)
+{
+	int irq_num = fdt_rcc_enable_it("wakeup");
 
-	/* Flush L1/L2 data caches */
-	write_sctlr(read_sctlr() & ~SCTLR_C_BIT);
-	dcsw_op_all(DC_OP_CISW);
-
-	for ( ; ; ) {
-		wfi();
+	if (irq_num < 0) {
+		ERROR("irq_num = %d\n", irq_num);
+		panic();
 	}
+
+	plat_ic_set_interrupt_priority(irq_num, STM32MP1_IRQ_RCC_SEC_PRIO);
 }
 
 /*******************************************************************************
@@ -104,7 +108,7 @@ void sp_min_plat_fiq_handler(uint32_t id)
 	case ARM_IRQ_SEC_PHY_TIMER:
 	case STM32MP1_IRQ_MCU_SEV:
 	case STM32MP1_IRQ_RCC_WAKEUP:
-		stm32mp1_rcc_it_handler(id);
+		stm32mp1_calib_it_handler(id);
 		break;
 	case STM32MP1_IRQ_TZC400:
 		tzc400_init(STM32MP1_TZC_BASE);
@@ -232,6 +236,22 @@ void sp_min_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 
 	bl_params_node_t *bl_params = params_from_bl2->head;
 
+	mmap_add_region(BL_CODE_BASE, BL_CODE_BASE,
+			BL_CODE_END - BL_CODE_BASE,
+			MT_CODE | MT_SECURE);
+
+#if SEPARATE_CODE_AND_RODATA
+	mmap_add_region(BL_RO_DATA_BASE, BL_RO_DATA_BASE,
+			BL_RO_DATA_LIMIT - BL_RO_DATA_BASE,
+			MT_RO_DATA | MT_SECURE);
+#endif
+
+	mmap_add_region(STM32MP_DDR_BASE, STM32MP_DDR_BASE,
+			dt_get_ddr_size() - STM32MP_DDR_S_SIZE,
+			MT_MEMORY | MT_RW | MT_NS);
+
+	configure_mmu();
+
 	/*
 	 * Copy BL33 entry point information.
 	 * They are stored in Secure RAM, in BL2's address space.
@@ -319,7 +339,7 @@ void stm32mp1_sp_min_security_setup(void)
 	}
 
 	if (stm32_timer_init() == 0) {
-		stm32mp1_cal_init();
+		stm32mp1_calib_init();
 	}
 }
 
@@ -328,22 +348,6 @@ void stm32mp1_sp_min_security_setup(void)
  ******************************************************************************/
 void sp_min_platform_setup(void)
 {
-	mmap_add_region(BL_CODE_BASE, BL_CODE_BASE,
-			BL_CODE_END - BL_CODE_BASE,
-			MT_CODE | MT_SECURE);
-
-#if SEPARATE_CODE_AND_RODATA
-	mmap_add_region(BL_RO_DATA_BASE, BL_RO_DATA_BASE,
-			BL_RO_DATA_LIMIT - BL_RO_DATA_BASE,
-			MT_RO_DATA | MT_SECURE);
-#endif
-
-	mmap_add_region(STM32MP_DDR_BASE, STM32MP_DDR_BASE,
-			dt_get_ddr_size() - STM32MP_DDR_S_SIZE,
-			MT_MEMORY | MT_RW | MT_NS);
-
-	configure_mmu();
-
 	/* Initialize tzc400 after DDR initialization */
 	stm32mp1_security_setup();
 
@@ -357,6 +361,8 @@ void sp_min_platform_setup(void)
 	if (stm32_iwdg_init() < 0) {
 		panic();
 	}
+
+	configure_wakeup_interrupt();
 
 	stm32mp1_driver_init_late();
 }

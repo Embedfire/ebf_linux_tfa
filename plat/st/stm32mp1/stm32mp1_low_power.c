@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -129,6 +129,8 @@ static void enter_cstop(uint32_t mode, uint32_t nsec_addr)
 	uintptr_t pwr_base = stm32mp_pwr_base();
 	uintptr_t rcc_base = stm32mp_rcc_base();
 
+	stm32mp1_syscfg_disable_io_compensation();
+
 	dcsw_op_all(DC_OP_CISW);
 
 	stm32_clean_context();
@@ -140,6 +142,8 @@ static void enter_cstop(uint32_t mode, uint32_t nsec_addr)
 		 */
 		stm32_save_ddr_training_area();
 	}
+
+	stm32mp1_clk_mpu_suspend();
 
 	if (dt_pmic_status() > 0) {
 		stm32_apply_pmic_suspend_config(mode);
@@ -186,7 +190,6 @@ static void enter_cstop(uint32_t mode, uint32_t nsec_addr)
 	mmio_write_32(bkpr_core1_magic, 0);
 
 	if (mode == STM32_PM_CSTOP_ALLOW_STANDBY_DDR_SR) {
-
 		/*
 		 * Save non-secure world entrypoint after standby in Backup
 		 * register
@@ -197,6 +200,14 @@ static void enter_cstop(uint32_t mode, uint32_t nsec_addr)
 
 		if (stm32_save_context(zq0cr0_zdata) != 0) {
 			panic();
+		}
+
+		/* Keep retention and backup RAM content in standby */
+		mmio_setbits_32(pwr_base + PWR_CR2, PWR_CR2_BREN |
+				PWR_CR2_RREN);
+		while ((mmio_read_32(pwr_base + PWR_CR2) &
+			(PWR_CR2_BRRDY | PWR_CR2_RRRDY)) == 0U) {
+			;
 		}
 	}
 
@@ -212,6 +223,7 @@ static void enter_cstop(uint32_t mode, uint32_t nsec_addr)
  */
 void stm32_exit_cstop(void)
 {
+	uintptr_t pwr_base = stm32mp_pwr_base();
 	uintptr_t rcc_base = stm32mp_rcc_base();
 
 	if (!enter_cstop_done) {
@@ -219,6 +231,8 @@ void stm32_exit_cstop(void)
 	}
 
 	enter_cstop_done = false;
+
+	stm32mp1_clk_mpu_resume();
 
 	if (ddr_sw_self_refresh_exit() != 0) {
 		panic();
@@ -236,6 +250,9 @@ void stm32_exit_cstop(void)
 	dsb();
 	isb();
 
+	/* Disable retention and backup RAM content after stop */
+	mmio_clrbits_32(pwr_base + PWR_CR2, PWR_CR2_BREN | PWR_CR2_RREN);
+
 	/* Update STGEN counter with low power mode duration */
 	stm32_rtc_get_calendar(&current_calendar);
 
@@ -243,10 +260,17 @@ void stm32_exit_cstop(void)
 						   &sleep_time);
 
 	stm32mp1_stgen_increment(stdby_time_in_ms);
+
+	stm32mp1_syscfg_enable_io_compensation();
 }
 
 static void enter_shutdown(void)
 {
+	/* Set DDR in Self-refresh before shutting down the platform */
+	if (ddr_standby_sr_entry(NULL) != 0) {
+		WARN("DDR can't be set in Self-refresh mode\n");
+	}
+
 	if (dt_pmic_status() > 0) {
 		if (!initialize_pmic_i2c()) {
 			panic();
@@ -294,10 +318,10 @@ void stm32_pwr_down_wfi(void)
 {
 	uint32_t interrupt = GIC_SPURIOUS_INTERRUPT;
 
-	stm32mp1_rcc_set_wakeup(false);
+	stm32mp1_calib_set_wakeup(false);
 
 	while (interrupt == GIC_SPURIOUS_INTERRUPT &&
-	       !stm32mp1_rcc_get_wakeup()) {
+	       !stm32mp1_calib_get_wakeup()) {
 		wfi_svc_int_enable((uintptr_t)&int_stack[0]);
 
 		interrupt = gicv2_acknowledge_interrupt();

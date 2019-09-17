@@ -56,17 +56,10 @@ void stm32mp1_clk_rcc_regs_lock(void);
 void stm32mp1_clk_rcc_regs_unlock(void);
 
 unsigned long stm32mp1_clk_rcc2id(unsigned int offset, unsigned int bit);
-
 #if defined(IMAGE_BL32)
-bool stm32mp1_rcc_get_wakeup(void);
-void stm32mp1_rcc_set_wakeup(bool state);
-void stm32mp1_rcc_it_handler(uint32_t id);
-int stm32mp1_rcc_start_hsi_cal(void);
-int stm32mp1_rcc_start_csi_cal(void);
-void stm32mp1_cal_init(void);
+void stm32mp1_clk_mpu_suspend(void);
+void stm32mp1_clk_mpu_resume(void);
 #endif
-
-void stm32mp1_rcc_init_late(void);
 
 void stm32mp1_register_clock_parents_secure(unsigned long id);
 

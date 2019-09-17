@@ -144,7 +144,9 @@
 };
 
 &pwr {
-	pwr-supply = <&vdd>;
+	pwr-regulators {
+		vdd-supply = <&vdd>;
+	};
 };
 
 &rng1 {
@@ -274,7 +276,7 @@
 		CLK_UART6_HSI
 		CLK_UART78_HSI
 		CLK_SPDIF_PLL4P
-		CLK_FDCAN_PLL4Q
+		CLK_FDCAN_PLL4R
 		CLK_SAI1_PLL3Q
 		CLK_SAI2_PLL3Q
 		CLK_SAI3_PLL3Q
@@ -311,6 +313,14 @@
 };
 
 /* Security specific */
+&bsec {
+	board_id: board_id@ec {
+		reg = <0xec 0x4>;
+		status = "okay";
+		secure-status = "okay";
+	};
+};
+
 &etzpc {
 	st,decprot = <
 		DECPROT(STM32MP1_ETZPC_USART1_ID, DECPROT_NS_RW, DECPROT_UNLOCK)
@@ -331,6 +341,7 @@
 	system_suspend_supported_soc_modes = <
 		STM32_PM_CSLEEP_RUN
 		STM32_PM_CSTOP_ALLOW_LP_STOP
+		STM32_PM_CSTOP_ALLOW_LPLV_STOP
 		STM32_PM_CSTOP_ALLOW_STANDBY_DDR_SR
 	>;
 	system_off_soc_mode = <STM32_PM_CSTOP_ALLOW_STANDBY_DDR_OFF>;
@@ -339,7 +350,7 @@
 &timers15 {
 	secure-status = "okay";
 	st,hsi-cal-input = <7>;
-	st,csi_cal-input = <8>;
+	st,csi-cal-input = <8>;
 };
 
 /* Low-power states of regulators */
@@ -347,6 +358,10 @@
 	lp-stop {
 		regulator-on-in-suspend;
 		regulator-suspend-microvolt = <1200000>;
+	};
+	lplv-stop {
+		regulator-on-in-suspend;
+		regulator-suspend-microvolt = <900000>;
 	};
 	standby-ddr-sr {
 		regulator-off-in-suspend;
@@ -361,6 +376,10 @@
 		regulator-suspend-microvolt = <1350000>;
 		regulator-on-in-suspend;
 	};
+	lplv-stop {
+		regulator-suspend-microvolt = <1350000>;
+		regulator-on-in-suspend;
+	};
 	standby-ddr-sr {
 		regulator-suspend-microvolt = <1350000>;
 		regulator-on-in-suspend;
@@ -372,6 +391,10 @@
 
 &vdd {
 	lp-stop {
+		regulator-suspend-microvolt = <3300000>;
+		regulator-on-in-suspend;
+	};
+	lplv-stop {
 		regulator-suspend-microvolt = <3300000>;
 		regulator-on-in-suspend;
 	};
@@ -416,6 +439,9 @@
 	lp-stop {
 		regulator-off-in-suspend;
 	};
+	lplv-stop {
+		regulator-off-in-suspend;
+	};
 	standby-ddr-sr {
 		regulator-off-in-suspend;
 	};
@@ -453,6 +479,9 @@
 
 &vref_ddr {
 	lp-stop {
+		regulator-on-in-suspend;
+	};
+	lplv-stop {
 		regulator-on-in-suspend;
 	};
 	standby-ddr-sr {

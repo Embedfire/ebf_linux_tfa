@@ -460,8 +460,9 @@
 #define HSTR		p15, 4, c1, c1, 3
 #define CNTHCTL		p15, 4, c14, c1, 0
 #define CNTKCTL		p15, 0, c14, c1, 0
-#define CNTPTVAL	p15, 0, c14, c2, 0
-#define CNTPCTL		p15, 0, c14, c2, 1
+#define CNTP_TVAL	p15, 0, c14, c2, 0
+#define CNTP_CTL	p15, 0, c14, c2, 1
+#define CNTV_CTL	p15, 0, c14, c3, 1
 #define VPIDR		p15, 4, c0, c0, 0
 #define VMPIDR		p15, 4, c0, c0, 5
 #define ISR		p15, 0, c12, c1, 0

@@ -12,6 +12,19 @@
 #include <stm32mp_auth.h>
 #include <stm32mp_common.h>
 
+static const struct auth_ops *stm32mp_auth_ops;
+
+void stm32mp_init_auth(struct auth_ops *init_ptr)
+{
+	if ((init_ptr == NULL) ||
+	    (init_ptr->check_key == NULL) ||
+	    (init_ptr->verify_signature == NULL)) {
+		panic();
+	}
+
+	stm32mp_auth_ops = init_ptr;
+}
+
 int check_header(boot_api_image_header_t *header, uintptr_t buffer)
 {
 	uint32_t i;
@@ -55,8 +68,6 @@ int check_authentication(boot_api_image_header_t *header, uintptr_t buffer)
 	uint32_t header_skip_cksum = sizeof(header->magic) +
 		sizeof(header->image_signature) +
 		sizeof(header->payload_checksum);
-	boot_api_context_t *boot_context =
-		(boot_api_context_t *)stm32mp_get_boot_ctx_address();
 
 	uret = bsec_read_otp(&sec_closed, BOOT_API_OTP_MODE_WORD_NB);
 	if (uret != 0) {
@@ -74,8 +85,7 @@ int check_authentication(boot_api_image_header_t *header, uintptr_t buffer)
 	}
 
 	/* Check Public Key */
-	if (boot_context->p_bootrom_ext_service_ecdsa_check_key
-	    (header->ecc_pubk, NULL) != STD_OK) {
+	if (stm32mp_auth_ops->check_key(header->ecc_pubk, NULL) != STD_OK) {
 		return -EINVAL;
 	}
 
@@ -110,8 +120,9 @@ int check_authentication(boot_api_image_header_t *header, uintptr_t buffer)
 	}
 
 	/* Verify signature */
-	if (boot_context->p_bootrom_ext_service_ecdsa_verify_signature
-	    (image_hash, header->ecc_pubk, header->image_signature,
+	if (stm32mp_auth_ops->verify_signature
+	    (image_hash, header->ecc_pubk,
+	     header->image_signature,
 	     header->ecc_algo_type) != STD_OK) {
 		return -EINVAL;
 	}

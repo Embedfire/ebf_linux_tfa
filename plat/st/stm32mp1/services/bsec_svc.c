@@ -295,7 +295,8 @@ static uint32_t bsec_write_all_bsec(struct otp_exchange *exchange,
 
 			value = (exchange->programming_lock[j] >> i) & 1U;
 			if (value != 0U) {
-				if (!bsec_write_sp_lock((32U * j) + i, 1U)) {
+				if (bsec_set_sp_lock((32U * j) + i) !=
+				    BSEC_OK) {
 					return BSEC_ERROR;
 				}
 			}
@@ -315,7 +316,8 @@ static uint32_t bsec_write_all_bsec(struct otp_exchange *exchange,
 
 			value = (exchange->shadow_write_lock[j] >> i) & 1U;
 			if (value != 0U) {
-				if (!bsec_write_sw_lock((32U * j) + i, 1U)) {
+				if (bsec_set_sw_lock((32U * j) + i) !=
+				    BSEC_OK) {
 					return BSEC_ERROR;
 				}
 			}
@@ -335,7 +337,8 @@ static uint32_t bsec_write_all_bsec(struct otp_exchange *exchange,
 
 			value = (exchange->shadow_read_lock[j] >> i) & 1U;
 			if (value != 0U) {
-				if (!bsec_write_sr_lock((32U * j) + i, 1U)) {
+				if (bsec_set_sr_lock((32U * j) + i) !=
+				    BSEC_OK) {
 					return BSEC_ERROR;
 				}
 			}
@@ -366,12 +369,9 @@ static uint32_t bsec_write_all_bsec(struct otp_exchange *exchange,
 		(uint8_t)(exchange->general_lock & GPLOCK_LOCK_MASK) >>
 		GPLOCK_LOCK_SHIFT;
 
-	if (!bsec_mode_is_closed_device()) {
-		config_param.upper_otp_lock =
-			(uint8_t)(exchange->general_lock &
-				  UPPER_OTP_LOCK_MASK) >>
-				 UPPER_OTP_LOCK_SHIFT;
-	}
+	config_param.upper_otp_lock =
+		(uint8_t)(exchange->general_lock & UPPER_OTP_LOCK_MASK) >>
+		 UPPER_OTP_LOCK_SHIFT;
 
 	ret = bsec_set_config(&config_param);
 	if (ret != BSEC_OK) {
@@ -388,7 +388,6 @@ uint32_t bsec_main(uint32_t x1, uint32_t x2, uint32_t x3,
 {
 	uint32_t result;
 	uint32_t tmp_data = 0U;
-	struct otp_exchange *otp_exch = (struct otp_exchange *)(uintptr_t)x2;
 
 	if ((x1 != STM32_SMC_READ_ALL) && (x1 != STM32_SMC_WRITE_ALL) &&
 	    (bsec_check_nsec_access_rights(x2) != BSEC_OK)) {
@@ -413,8 +412,7 @@ uint32_t bsec_main(uint32_t x1, uint32_t x2, uint32_t x3,
 				break;
 			}
 
-			*ret_otp_value = (uint32_t)bsec_check_ssp(tmp_data,
-				otp_exch->otp_value[x2]);
+			*ret_otp_value = (uint32_t)bsec_check_ssp(tmp_data, x3);
 			if (*ret_otp_value == (uint32_t)BSEC_SSP_ERROR) {
 				result = BSEC_OK;
 				break;
@@ -446,10 +444,11 @@ uint32_t bsec_main(uint32_t x1, uint32_t x2, uint32_t x3,
 		result = bsec_write_otp(tmp_data, x2);
 		break;
 	case STM32_SMC_READ_ALL:
-		result = bsec_read_all_bsec(otp_exch);
+		result = bsec_read_all_bsec((struct otp_exchange *)x2);
 		break;
 	case STM32_SMC_WRITE_ALL:
-		result = bsec_write_all_bsec(otp_exch, ret_otp_value);
+		result = bsec_write_all_bsec((struct otp_exchange *)x2,
+					     ret_otp_value);
 		break;
 	default:
 		result = BSEC_ERROR;

@@ -182,6 +182,10 @@ void stm32_iwdg_refresh(uint32_t instance)
 
 	assert(iwdg);
 
+	if (iwdg->base == 0U) {
+		return;
+        }
+
 	stm32mp_clk_enable(iwdg->clock);
 
 	mmio_write_32(iwdg->base + IWDG_KR_OFFSET, IWDG_KR_RELOAD_KEY);
@@ -215,14 +219,14 @@ int stm32_iwdg_init(void)
 		iwdg->clock = (unsigned long)dt_info.clock;
 
 		/* DT can specify low power cases */
-		if (fdt_getprop(fdt, node, "stm32,enable-on-stop", NULL) !=
+		if (fdt_getprop(fdt, node, "stm32,enable-on-stop", NULL) ==
 		    NULL) {
-			iwdg->flags |= IWDG_ENABLE_ON_STOP;
+			iwdg->flags |= IWDG_DISABLE_ON_STOP;
 		}
 
-		if (fdt_getprop(fdt, node, "stm32,enable-on-standby", NULL) !=
+		if (fdt_getprop(fdt, node, "stm32,enable-on-standby", NULL) ==
 		    NULL) {
-			iwdg->flags |= IWDG_ENABLE_ON_STANDBY;
+			iwdg->flags |= IWDG_DISABLE_ON_STANDBY;
 		}
 
 		/* Explicit list of supported bit flags */
@@ -243,12 +247,12 @@ int stm32_iwdg_init(void)
 			goto next;
 		}
 
-		if ((hw_init & IWDG_ENABLE_ON_STOP) != 0) {
-			iwdg->flags |= IWDG_ENABLE_ON_STOP;
+		if ((hw_init & IWDG_DISABLE_ON_STOP) != 0) {
+			iwdg->flags |= IWDG_DISABLE_ON_STOP;
 		}
 
-		if ((hw_init & IWDG_ENABLE_ON_STANDBY) != 0) {
-			iwdg->flags |= IWDG_ENABLE_ON_STANDBY;
+		if ((hw_init & IWDG_DISABLE_ON_STANDBY) != 0) {
+			iwdg->flags |= IWDG_DISABLE_ON_STANDBY;
 		}
 
 		VERBOSE("IWDG%u found, %ssecure\n", idx + 1,

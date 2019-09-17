@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, STMicroelectronics - All Rights Reserved
+ * Copyright (C) 2018-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
  */
@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <generic_delay_timer.h>
 #include <libfdt.h>
+#include <limits.h>
 #include <mmio.h>
 #include <platform.h>
 #include <spinlock.h>
@@ -27,9 +28,6 @@
 #include <stm32mp1_private.h>
 #include <stm32mp1_rcc.h>
 #include <stm32mp1_shared_resources.h>
-#if defined(IMAGE_BL32)
-#include <stm32_timer.h>
-#endif
 #include <utils_def.h>
 
 #define MAX_HSI_HZ	64000000
@@ -43,10 +41,6 @@
 #define CLKDIV_TIMEOUT	TIMEOUT_200MS
 #define HSIDIV_TIMEOUT	TIMEOUT_200MS
 #define OSCRDY_TIMEOUT	TIMEOUT_1S
-
-#if defined(IMAGE_BL32)
-#define CAL_MAX_RETRY	20U
-#endif
 
 enum stm32mp1_parent_id {
 /* Oscillators are defined in enum stm32mp_osc_id */
@@ -91,7 +85,7 @@ enum stm32mp1_parent_sel {
 	_STGEN_SEL,
 	_I2C46_SEL,
 	_SPI6_SEL,
-	_USART1_SEL,
+	_UART1_SEL,
 	_RNG1_SEL,
 	_UART6_SEL,
 	_UART24_SEL,
@@ -101,8 +95,8 @@ enum stm32mp1_parent_sel {
 	_SDMMC3_SEL,
 	_QSPI_SEL,
 	_FMC_SEL,
-	_ASS_SEL,
-	_MSS_SEL,
+	_AXIS_SEL,
+	_MCUS_SEL,
 	_USBPHY_SEL,
 	_USBO_SEL,
 	_PARENT_SEL_NB,
@@ -210,32 +204,6 @@ struct stm32mp1_clk_pll {
 	enum stm32mp_osc_id refclk[REFCLK_SIZE];
 };
 
-#if defined(IMAGE_BL32)
-struct stm32mp1_trim_boundary_t {
-	/* Max boundary trim value around forbidden value */
-	unsigned int x1;
-	/* Min boundary trim value around forbidden value */
-	unsigned int x2;
-};
-
-struct stm32mp1_clk_cal {
-	uint16_t *fbv;
-	unsigned int cal_ref;
-	int trim_max;
-	int trim_min;
-	unsigned int boundary_max;
-	unsigned long ref_freq;
-	unsigned int freq_margin;
-	unsigned long (*get_freq)(void);
-	void (*set_trim)(unsigned int cal);
-	unsigned int (*get_trim)(void);
-	struct stm32mp1_trim_boundary_t boundary[16];
-};
-
-/* RCC Wakeup status */
-static bool rcc_wakeup;
-#endif
-
 /* Clocks with selectable source and non set/clr register access */
 #define _CLK_SELEC(off, b, idx, s)			\
 	{						\
@@ -280,13 +248,13 @@ static bool rcc_wakeup;
 		.fixed = (f),				\
 	}
 
-#define _CLK_PARENT(idx, off, s, m, p)			\
-	[(idx)] = {					\
-		.offset = (off),			\
-		.src = (s),				\
-		.msk = (m),				\
-		.parent = (p),				\
-		.nb_parent = ARRAY_SIZE(p)		\
+#define _CLK_PARENT_SEL(_label, _rcc_selr, _parents)		\
+	[_ ## _label ## _SEL] = {				\
+		.offset = _rcc_selr,				\
+		.src = _rcc_selr ## _ ## _label ## SRC_SHIFT,	\
+		.msk = _rcc_selr ## _ ## _label ## SRC_MASK,	\
+		.parent = (_parents),				\
+		.nb_parent = ARRAY_SIZE(_parents)		\
 	}
 
 #define _CLK_PLL(idx, type, off1, off2, off3,		\
@@ -347,6 +315,9 @@ static const struct stm32mp1_clk_gate stm32mp1_clk_gate[] = {
 	_CLK_SC_FIXED(RCC_MP_APB2ENSETR, 2, TIM15_K, _PCLK2),
 	_CLK_SC_SELEC(RCC_MP_APB2ENSETR, 13, USART6_K, _UART6_SEL),
 
+	_CLK_SC_FIXED(RCC_MP_APB3ENSETR, 11, SYSCFG, _UNKNOWN_ID),
+
+	_CLK_SC_SELEC(RCC_MP_APB4ENSETR, 0, LTDC_PX, _UNKNOWN_SEL),
 	_CLK_SC_SELEC(RCC_MP_APB4ENSETR, 8, DDRPERFM, _UNKNOWN_SEL),
 	_CLK_SC_SELEC(RCC_MP_APB4ENSETR, 15, IWDG2, _UNKNOWN_SEL),
 	_CLK_SC_SELEC(RCC_MP_APB4ENSETR, 16, USBPHY_K, _USBPHY_SEL),
@@ -354,7 +325,7 @@ static const struct stm32mp1_clk_gate stm32mp1_clk_gate[] = {
 	_CLK_SC_SELEC(RCC_MP_APB5ENSETR, 0, SPI6_K, _SPI6_SEL),
 	_CLK_SC_SELEC(RCC_MP_APB5ENSETR, 2, I2C4_K, _I2C46_SEL),
 	_CLK_SC_SELEC(RCC_MP_APB5ENSETR, 3, I2C6_K, _I2C46_SEL),
-	_CLK_SC_SELEC(RCC_MP_APB5ENSETR, 4, USART1_K, _USART1_SEL),
+	_CLK_SC_SELEC(RCC_MP_APB5ENSETR, 4, USART1_K, _UART1_SEL),
 	_CLK_SC_FIXED(RCC_MP_APB5ENSETR, 8, RTCAPB, _PCLK5),
 	_CLK_SC_FIXED(RCC_MP_APB5ENSETR, 11, TZC1, _PCLK5),
 	_CLK_SC_FIXED(RCC_MP_APB5ENSETR, 12, TZC2, _PCLK5),
@@ -363,6 +334,8 @@ static const struct stm32mp1_clk_gate stm32mp1_clk_gate[] = {
 	_CLK_SC_FIXED(RCC_MP_APB5ENSETR, 16, BSEC, _PCLK5),
 	_CLK_SC_SELEC(RCC_MP_APB5ENSETR, 20, STGEN_K, _STGEN_SEL),
 
+	_CLK_SC_SELEC(RCC_MP_AHB2ENSETR, 0, DMA1, _UNKNOWN_SEL),
+	_CLK_SC_SELEC(RCC_MP_AHB2ENSETR, 1, DMA2, _UNKNOWN_SEL),
 	_CLK_SC_SELEC(RCC_MP_AHB2ENSETR, 8, USBO_K, _USBO_SEL),
 	_CLK_SC_SELEC(RCC_MP_AHB2ENSETR, 16, SDMMC3_K, _SDMMC3_SEL),
 
@@ -384,6 +357,9 @@ static const struct stm32mp1_clk_gate stm32mp1_clk_gate[] = {
 	_CLK_SC_SELEC(RCC_MP_AHB5ENSETR, 6, RNG1_K, _RNG1_SEL),
 	_CLK_SC_FIXED(RCC_MP_AHB5ENSETR, 8, BKPSRAM, _PCLK5),
 
+	_CLK_SC_SELEC(RCC_MP_AHB6ENSETR, 0, MDMA, _UNKNOWN_SEL),
+	_CLK_SC_SELEC(RCC_MP_AHB6ENSETR, 5, GPU, _UNKNOWN_SEL),
+	_CLK_SC_FIXED(RCC_MP_AHB6ENSETR, 10, ETHMAC, _ACLK),
 	_CLK_SC_SELEC(RCC_MP_AHB6ENSETR, 12, FMC_K, _FMC_SEL),
 	_CLK_SC_SELEC(RCC_MP_AHB6ENSETR, 14, QSPI_K, _QSPI_SEL),
 	_CLK_SC_SELEC(RCC_MP_AHB6ENSETR, 16, SDMMC1_K, _SDMMC12_SEL),
@@ -462,25 +438,25 @@ static const uint8_t usbo_parents[] = {
 };
 
 static const struct stm32mp1_clk_sel stm32mp1_clk_sel[_PARENT_SEL_NB] = {
-	_CLK_PARENT(_I2C12_SEL, RCC_I2C12CKSELR, 0, 0x7, i2c12_parents),
-	_CLK_PARENT(_I2C35_SEL, RCC_I2C35CKSELR, 0, 0x7, i2c35_parents),
-	_CLK_PARENT(_STGEN_SEL, RCC_STGENCKSELR, 0, 0x3, stgen_parents),
-	_CLK_PARENT(_I2C46_SEL, RCC_I2C46CKSELR, 0, 0x7, i2c46_parents),
-	_CLK_PARENT(_SPI6_SEL, RCC_SPI6CKSELR, 0, 0x7, spi6_parents),
-	_CLK_PARENT(_USART1_SEL, RCC_UART1CKSELR, 0, 0x7, usart1_parents),
-	_CLK_PARENT(_RNG1_SEL, RCC_RNG1CKSELR, 0, 0x3, rng1_parents),
-	_CLK_PARENT(_UART6_SEL, RCC_UART6CKSELR, 0, 0x7, uart6_parents),
-	_CLK_PARENT(_UART24_SEL, RCC_UART24CKSELR, 0, 0x7, uart234578_parents),
-	_CLK_PARENT(_UART35_SEL, RCC_UART35CKSELR, 0, 0x7, uart234578_parents),
-	_CLK_PARENT(_UART78_SEL, RCC_UART78CKSELR, 0, 0x7, uart234578_parents),
-	_CLK_PARENT(_SDMMC12_SEL, RCC_SDMMC12CKSELR, 0, 0x7, sdmmc12_parents),
-	_CLK_PARENT(_SDMMC3_SEL, RCC_SDMMC3CKSELR, 0, 0x7, sdmmc3_parents),
-	_CLK_PARENT(_QSPI_SEL, RCC_QSPICKSELR, 0, 0xf, qspi_parents),
-	_CLK_PARENT(_FMC_SEL, RCC_FMCCKSELR, 0, 0xf, fmc_parents),
-	_CLK_PARENT(_ASS_SEL, RCC_ASSCKSELR, 0, 0x3, ass_parents),
-	_CLK_PARENT(_MSS_SEL, RCC_MSSCKSELR, 0, 0x3, mss_parents),
-	_CLK_PARENT(_USBPHY_SEL, RCC_USBCKSELR, 0, 0x3, usbphy_parents),
-	_CLK_PARENT(_USBO_SEL, RCC_USBCKSELR, 4, 0x1, usbo_parents),
+	_CLK_PARENT_SEL(I2C12, RCC_I2C12CKSELR, i2c12_parents),
+	_CLK_PARENT_SEL(I2C35, RCC_I2C35CKSELR, i2c35_parents),
+	_CLK_PARENT_SEL(STGEN, RCC_STGENCKSELR, stgen_parents),
+	_CLK_PARENT_SEL(I2C46, RCC_I2C46CKSELR, i2c46_parents),
+	_CLK_PARENT_SEL(SPI6, RCC_SPI6CKSELR, spi6_parents),
+	_CLK_PARENT_SEL(UART1, RCC_UART1CKSELR, usart1_parents),
+	_CLK_PARENT_SEL(RNG1, RCC_RNG1CKSELR, rng1_parents),
+	_CLK_PARENT_SEL(UART6, RCC_UART6CKSELR, uart6_parents),
+	_CLK_PARENT_SEL(UART24, RCC_UART24CKSELR, uart234578_parents),
+	_CLK_PARENT_SEL(UART35, RCC_UART35CKSELR, uart234578_parents),
+	_CLK_PARENT_SEL(UART78, RCC_UART78CKSELR, uart234578_parents),
+	_CLK_PARENT_SEL(SDMMC12, RCC_SDMMC12CKSELR, sdmmc12_parents),
+	_CLK_PARENT_SEL(SDMMC3, RCC_SDMMC3CKSELR, sdmmc3_parents),
+	_CLK_PARENT_SEL(QSPI, RCC_QSPICKSELR, qspi_parents),
+	_CLK_PARENT_SEL(FMC, RCC_FMCCKSELR, fmc_parents),
+	_CLK_PARENT_SEL(AXIS, RCC_ASSCKSELR, ass_parents),
+	_CLK_PARENT_SEL(MCUS, RCC_MSSCKSELR, mss_parents),
+	_CLK_PARENT_SEL(USBPHY, RCC_USBCKSELR, usbphy_parents),
+	_CLK_PARENT_SEL(USBO, RCC_USBCKSELR, usbo_parents),
 };
 
 /* Define characteristic of PLL according type */
@@ -587,7 +563,7 @@ const stm32mp1_clk_parent_sel_name[_PARENT_SEL_NB] __unused = {
 	[_STGEN_SEL] = "STGEN",
 	[_I2C46_SEL] = "I2C46",
 	[_SPI6_SEL] = "SPI6",
-	[_USART1_SEL] = "USART1",
+	[_UART1_SEL] = "USART1",
 	[_RNG1_SEL] = "RNG1",
 	[_UART6_SEL] = "UART6",
 	[_UART24_SEL] = "UART24",
@@ -597,8 +573,8 @@ const stm32mp1_clk_parent_sel_name[_PARENT_SEL_NB] __unused = {
 	[_SDMMC3_SEL] = "SDMMC3",
 	[_QSPI_SEL] = "QSPI",
 	[_FMC_SEL] = "FMC",
-	[_ASS_SEL] = "ASS",
-	[_MSS_SEL] = "MSS",
+	[_AXIS_SEL] = "ASS",
+	[_MCUS_SEL] = "MSS",
 	[_USBPHY_SEL] = "USBPHY",
 	[_USBO_SEL] = "USBO",
 };
@@ -624,41 +600,6 @@ static const struct stm32mp1_clk_pll *pll_ref(unsigned int idx)
 {
 	return &stm32mp1_clk_pll[idx];
 }
-
-#if defined(IMAGE_BL32)
-/* List of forbiden values for hsi */
-static uint16_t fbv_hsi[] = { 512, 480, 448, 416, 384, 352, 320, 288, 256, 224,
-	192, 160, 128, 96, 64, 32, 0 };
-static uint16_t fbv_csi[] = { 256, 240, 224, 208, 192, 176, 160, 144, 128, 112,
-	96, 80, 64, 48, 32, 16, 0 };
-
-static void hsi_set_trim(unsigned int cal);
-static unsigned int hsi_get_trimed_cal(void);
-static void csi_set_trim(unsigned int cal);
-static unsigned int csi_get_trimed_cal(void);
-
-static struct stm32mp1_clk_cal stm32mp1_clk_cal_hsi = {
-	.fbv = fbv_hsi,
-	.trim_max = 63,
-	.trim_min = -64,
-	.ref_freq = 0,
-	.freq_margin = 1,
-	.set_trim = hsi_set_trim,
-	.get_trim = hsi_get_trimed_cal,
-};
-
-static struct stm32mp1_clk_cal stm32mp1_clk_cal_csi = {
-	.fbv = fbv_csi,
-	.trim_max = 15,
-	.trim_min = -16,
-	.ref_freq = 0,
-	.freq_margin = 2,
-	.set_trim = csi_set_trim,
-	.get_trim = csi_get_trimed_cal,
-};
-
-static uint32_t timer_val;
-#endif
 
 static int stm32mp1_lock_available(void)
 {
@@ -799,7 +740,7 @@ static int stm32mp1_clk_get_parent(unsigned long id)
 	}
 
 	sel = clk_sel_ref(s);
-	p_sel = (mmio_read_32(rcc_base + sel->offset) >> sel->src) & sel->msk;
+	p_sel = (mmio_read_32(rcc_base + sel->offset) & sel->msk) >> sel->src;
 	if (p_sel < sel->nb_parent) {
 #if LOG_LEVEL >= LOG_LEVEL_VERBOSE
 		VERBOSE("%s: %s clock is the parent %s of clk id %ld\n",
@@ -1315,6 +1256,13 @@ static void stm32mp1_hse_enable(bool bypass, bool digbyp, bool css)
 	if (css) {
 		mmio_write_32(rcc_base + RCC_OCENSETR, RCC_OCENR_HSECSSON);
 	}
+
+#if defined(STM32MP_USB) || defined(STM32MP_UART)
+	if ((mmio_read_32(rcc_base + RCC_OCENSETR) & RCC_OCENR_HSEBYP) &&
+	    (!(digbyp || bypass))) {
+		panic();
+	}
+#endif
 }
 
 static void stm32mp1_csi_set(bool enable)
@@ -1460,7 +1408,10 @@ static void stm32mp1_pll_start(enum stm32mp1_pll_id pll_id)
 	const struct stm32mp1_clk_pll *pll = pll_ref(pll_id);
 	uint32_t pllxcr = stm32mp_rcc_base() + pll->pllxcr;
 
-	mmio_write_32(pllxcr, RCC_PLLNCR_PLLON);
+	mmio_clrsetbits_32(pllxcr,
+			   RCC_PLLNCR_DIVPEN | RCC_PLLNCR_DIVQEN |
+			   RCC_PLLNCR_DIVREN,
+			   RCC_PLLNCR_PLLON);
 }
 
 static int stm32mp1_pll_output(enum stm32mp1_pll_id pll_id, uint32_t output)
@@ -1590,6 +1541,9 @@ static void stm32mp1_pll_csg(enum stm32mp1_pll_id pll_id, uint32_t *csg)
 		    RCC_PLLNCSGR_SSCG_MODE_MASK;
 
 	mmio_write_32(stm32mp_rcc_base() + pll->pllxcsgr, pllxcsg);
+
+	mmio_setbits_32(stm32mp_rcc_base() + pll->pllxcr,
+			RCC_PLLNCR_SSCG_CTRL);
 }
 
 static int stm32mp1_set_clksrc(unsigned int clksrc)
@@ -1798,6 +1752,32 @@ static void stm32mp1_pkcs_config(uint32_t pkcs)
 
 	mmio_clrsetbits_32(address, mask, value);
 }
+
+#if defined(IMAGE_BL32)
+void stm32mp1_clk_mpu_suspend(void)
+{
+	uintptr_t mpckselr = stm32mp_rcc_base() + RCC_MPCKSELR;
+
+	if (((mmio_read_32(mpckselr) & RCC_SELR_SRC_MASK)) ==
+	    RCC_MPCKSELR_PLL) {
+		if (stm32mp1_set_clksrc(CLK_MPU_PLL1P_DIV) != 0) {
+			panic();
+		}
+	}
+}
+
+void stm32mp1_clk_mpu_resume(void)
+{
+	uintptr_t mpckselr = stm32mp_rcc_base() + RCC_MPCKSELR;
+
+	if (((mmio_read_32(mpckselr) & RCC_SELR_SRC_MASK)) ==
+	    RCC_MPCKSELR_PLL_MPUDIV) {
+		if (stm32mp1_set_clksrc(CLK_MPU_PLL1P) != 0) {
+			panic();
+		}
+	}
+}
+#endif
 
 int stm32mp1_clk_init(void)
 {
@@ -2138,365 +2118,6 @@ static void stm32mp1_osc_clk_init(const char *name,
 	}
 }
 
-#if defined(IMAGE_BL32)
-/*
- * HSI Calibration part
- */
-static void hsi_set_trim(unsigned int cal)
-{
-	int clk_trim = (int)cal - (int)stm32mp1_clk_cal_hsi.cal_ref;
-	uint32_t trim = ((uint32_t)clk_trim << RCC_HSICFGR_HSITRIM_SHIFT) &
-			RCC_HSICFGR_HSITRIM_MASK;
-
-	mmio_clrsetbits_32(stm32mp_rcc_base() + RCC_HSICFGR,
-			   RCC_HSICFGR_HSITRIM_MASK, trim);
-}
-
-static unsigned int hsi_get_trimed_cal(void)
-{
-	uint32_t utrim = (mmio_read_32(stm32mp_rcc_base() + RCC_HSICFGR) &
-			  RCC_HSICFGR_HSITRIM_MASK) >>
-			 RCC_HSICFGR_HSITRIM_SHIFT;
-	int trim = (int)utrim - stm32mp1_clk_cal_hsi.trim_max;
-
-	if (trim + (int)stm32mp1_clk_cal_hsi.cal_ref < 0) {
-		return 0;
-	}
-
-	return stm32mp1_clk_cal_hsi.cal_ref + trim;
-}
-
-static void csi_set_trim(unsigned int cal)
-{
-	int clk_trim = (int)cal - (int)stm32mp1_clk_cal_csi.cal_ref +
-		       stm32mp1_clk_cal_csi.trim_max + 1;
-	uint32_t trim = ((uint32_t)clk_trim << RCC_CSICFGR_CSITRIM_SHIFT) &
-			RCC_CSICFGR_CSITRIM_MASK;
-
-	mmio_clrsetbits_32(stm32mp_rcc_base() + RCC_CSICFGR,
-			   RCC_CSICFGR_CSITRIM_MASK, trim);
-}
-
-static unsigned int csi_get_trimed_cal(void)
-{
-	uint32_t trim = (mmio_read_32(stm32mp_rcc_base() + RCC_CSICFGR) &
-			 RCC_CSICFGR_CSITRIM_MASK) >>
-			RCC_CSICFGR_CSITRIM_SHIFT;
-
-	return (int)trim - stm32mp1_clk_cal_csi.trim_max +
-		(int)stm32mp1_clk_cal_csi.cal_ref - 1;
-}
-
-static unsigned int trim_increase(struct stm32mp1_clk_cal *clk_cal,
-				  unsigned int cal)
-{
-	struct stm32mp1_trim_boundary_t *boundary;
-	unsigned int new_cal;
-	int i;
-
-	/* By default: last calibration value */
-	new_cal = cal;
-
-	/* Start from Lowest cal value */
-	for (i = (int)clk_cal->boundary_max - 1; i >= 0; i--) {
-		boundary = &clk_cal->boundary[i];
-
-		if (cal < boundary->x2) {
-			new_cal = boundary->x2;
-			break;
-		}
-
-		if ((cal >= boundary->x2) && (cal < boundary->x1)) {
-			new_cal = cal + 1;
-			break;
-		}
-	}
-
-	return new_cal;
-}
-
-static unsigned int trim_decrease(struct stm32mp1_clk_cal *clk_cal,
-				  unsigned int cal)
-{
-	struct stm32mp1_trim_boundary_t *boundary;
-	unsigned int new_cal;
-	unsigned int i;
-
-	/* By default: last calibration value */
-	new_cal = cal;
-
-	/* Start from Highest cal value */
-	for (i = 0; i < clk_cal->boundary_max; i++) {
-		boundary = &clk_cal->boundary[i];
-
-		if (cal > boundary->x1) {
-			new_cal = boundary->x1;
-			break;
-		}
-
-		if ((cal > boundary->x2) && (cal <= boundary->x1)) {
-			new_cal = cal - 1;
-			break;
-		}
-	}
-
-	return new_cal;
-}
-
-static void stm32mp1_rcc_calibration(struct stm32mp1_clk_cal *clk_cal)
-{
-	unsigned long freq = clk_cal->get_freq();
-	unsigned long min = clk_cal->ref_freq -
-		((clk_cal->ref_freq * clk_cal->freq_margin) / 100);
-	unsigned long max = clk_cal->ref_freq +
-		((clk_cal->ref_freq * clk_cal->freq_margin) / 100);
-	unsigned int nb_retries = CAL_MAX_RETRY;
-	int cal = clk_cal->get_trim();
-
-	VERBOSE("Freq is %lu min %lu max %lu\n", freq, min, max);
-
-	while (((freq < min) || (freq > max)) && (nb_retries != 0U)) {
-
-		if (freq < min) {
-			cal = trim_increase(clk_cal, cal);
-		} else {
-			cal = trim_decrease(clk_cal, cal);
-		}
-
-		clk_cal->set_trim(cal);
-
-		freq = clk_cal->get_freq();
-
-		nb_retries--;
-	}
-
-	if (nb_retries == 0U) {
-		ERROR("Calibration Failed\n");
-		panic();
-	}
-}
-
-static void save_trim(struct stm32mp1_clk_cal *clk_cal,
-		      unsigned int i, unsigned int x1, unsigned int x2)
-{
-	clk_cal->boundary[i].x1 = x1;
-	clk_cal->boundary[i].x2 = x2;
-}
-
-static int trim_find_prev_boundary(struct stm32mp1_clk_cal *clk_cal,
-				   unsigned int x1)
-{
-	unsigned int x = x1;
-	unsigned long freq;
-
-	clk_cal->set_trim(x1 + 1);
-	freq = clk_cal->get_freq();
-
-	while (x >= (clk_cal->cal_ref + clk_cal->trim_min)) {
-		x--;
-		clk_cal->set_trim(x);
-
-		if (clk_cal->get_freq() <= freq) {
-			break;
-		}
-	};
-
-	return x;
-}
-
-static void trim_table_init(struct stm32mp1_clk_cal *clk_cal)
-{
-	uint16_t *trim_fbv = clk_cal->fbv;
-	unsigned int min;
-	unsigned int max;
-	int boundary = 0;
-	int i = 0;
-
-	max = clk_cal->cal_ref + clk_cal->trim_max;
-	min = clk_cal->cal_ref + clk_cal->trim_min;
-
-	while (trim_fbv[i]) {
-		unsigned int x;
-		unsigned int x1 = trim_fbv[i];
-		unsigned int x2 = trim_fbv[i + 1];
-
-		if ((max <= x2) || (min >= x1)) {
-			i++;
-			if (boundary != 0) {
-				goto out;
-			}
-			continue;
-		}
-
-		/* Take forbiden value + 1 */
-		x2 = x2 + 1;
-		if (x2 < min) {
-			x2 = min;
-		}
-
-		if (boundary == 0) {
-			/* Save first boundary */
-			save_trim(clk_cal, boundary, max, x2);
-			boundary++;
-			i++;
-			continue;
-		}
-
-		x = trim_find_prev_boundary(clk_cal, x1);
-		/* Save boundary values */
-		save_trim(clk_cal, boundary, x - 1, x2);
-		boundary++;
-		i++;
-	};
-out:
-	clk_cal->boundary_max = boundary;
-}
-
-bool stm32mp1_rcc_get_wakeup(void)
-{
-	return rcc_wakeup;
-}
-
-void stm32mp1_rcc_set_wakeup(bool state)
-{
-	rcc_wakeup = state;
-}
-
-void stm32mp1_rcc_it_handler(uint32_t id)
-{
-	uintptr_t rcc_base = stm32mp_rcc_base();
-
-	switch (id) {
-	case STM32MP1_IRQ_RCC_WAKEUP:
-		plat_ic_set_priority_mask(GIC_HIGHEST_NS_PRIORITY);
-		mmio_setbits_32(rcc_base + RCC_MP_CIFR, RCC_MP_CIFR_WKUPF);
-		stm32mp1_rcc_set_wakeup(true);
-		return;
-
-	case STM32MP1_IRQ_MCU_SEV:
-		stm32mp1_rcc_set_wakeup(false);
-		if ((mmio_read_32(EXTI_BASE + EXTI_RPR3) &
-		     EXTI_RPR3_RPIF65) != 0U) {
-			mmio_setbits_32(EXTI_BASE + EXTI_RPR3,
-					EXTI_RPR3_RPIF65);
-		}
-
-		if ((mmio_read_32(EXTI_BASE + EXTI_FPR3) &
-		     EXTI_FPR3_FPIF65) != 0U) {
-			mmio_setbits_32(EXTI_BASE + EXTI_FPR3,
-					EXTI_FPR3_FPIF65);
-		}
-
-		break;
-
-	case ARM_IRQ_SEC_PHY_TIMER:
-	default:
-		break;
-	}
-
-	if (stm32mp1_clk_cal_hsi.ref_freq != 0U) {
-		stm32mp1_rcc_calibration(&stm32mp1_clk_cal_hsi);
-	}
-
-	if (stm32mp1_clk_cal_csi.ref_freq != 0U) {
-		stm32mp1_rcc_calibration(&stm32mp1_clk_cal_csi);
-	}
-
-	if (timer_val != 0U) {
-		write_cntptval(timer_val);
-	}
-}
-
-int stm32mp1_rcc_start_hsi_cal(void)
-{
-	if (stm32mp1_clk_cal_hsi.ref_freq == 0U) {
-		return -ENOENT;
-	}
-
-	stm32mp1_rcc_calibration(&stm32mp1_clk_cal_hsi);
-	return 0;
-}
-
-int stm32mp1_rcc_start_csi_cal(void)
-{
-	if (stm32mp1_clk_cal_csi.ref_freq == 0U) {
-		return -ENOENT;
-	}
-
-	stm32mp1_rcc_calibration(&stm32mp1_clk_cal_csi);
-	return 0;
-}
-
-static void init_hsi_cal(void)
-{
-	int len;
-
-	if (fdt_rcc_read_prop("st,hsi-cal", &len) == NULL) {
-		return;
-	}
-
-	stm32_timer_freq_func(&stm32mp1_clk_cal_hsi.get_freq, HSI_CAL);
-	assert(stm32mp1_clk_cal_hsi.get_freq);
-
-	stm32mp1_clk_cal_hsi.ref_freq = stm32mp_clk_get_rate(CK_HSI);
-
-	/* Read initial value */
-	stm32mp1_clk_cal_hsi.cal_ref =
-		((mmio_read_32(stm32mp_rcc_base() + RCC_HSICFGR)
-		  & RCC_HSICFGR_HSICAL_MASK) >> RCC_HSICFGR_HSICAL_SHIFT);
-
-	trim_table_init(&stm32mp1_clk_cal_hsi);
-
-	stm32mp1_clk_cal_hsi.set_trim(stm32mp1_clk_cal_hsi.cal_ref);
-
-	stm32mp1_rcc_calibration(&stm32mp1_clk_cal_hsi);
-}
-
-static void init_csi_cal(void)
-{
-	int len;
-
-	if (fdt_rcc_read_prop("st,csi-cal", &len) == NULL) {
-		return;
-	}
-
-	stm32_timer_freq_func(&stm32mp1_clk_cal_csi.get_freq, CSI_CAL);
-	assert(stm32mp1_clk_cal_csi.get_freq);
-
-	stm32mp1_clk_cal_csi.ref_freq = stm32mp_clk_get_rate(CK_CSI);
-
-	/* Read initial value */
-	stm32mp1_clk_cal_csi.cal_ref =
-		((mmio_read_32(stm32mp_rcc_base() + RCC_CSICFGR) &
-		  RCC_CSICFGR_CSICAL_MASK) >> RCC_CSICFGR_CSICAL_SHIFT);
-
-	trim_table_init(&stm32mp1_clk_cal_csi);
-
-	stm32mp1_clk_cal_csi.set_trim(stm32mp1_clk_cal_csi.cal_ref);
-
-	stm32mp1_rcc_calibration(&stm32mp1_clk_cal_csi);
-}
-
-void stm32mp1_cal_init(void)
-{
-	init_hsi_cal();
-	init_csi_cal();
-
-	timer_val = fdt_rcc_read_uint32_default("st,cal-sec", 0) *
-		plat_get_syscnt_freq2();
-
-	if (timer_val != 0U) {
-		/* Load & enable timer */
-		write_cntptval(timer_val);
-		write_cntpctl(BIT(0));
-	};
-
-	if (fdt_rcc_enable_it("mcu_sev") < 0) {
-		VERBOSE("No MCU calibration\n");
-	}
-}
-#endif
-
 static void stm32mp1_osc_init(void)
 {
 	enum stm32mp_osc_id i;
@@ -2529,7 +2150,7 @@ static int get_parent_id_parent(unsigned int parent_id)
 	case _ACLK:
 	case _PCLK4:
 	case _PCLK5:
-		s = _ASS_SEL;
+		s = _AXIS_SEL;
 		break;
 	case _PLL1_P:
 	case _PLL1_Q:
@@ -2743,7 +2364,6 @@ void stm32mp1_update_earlyboot_clocks_state(void)
 static void sync_earlyboot_clocks_state(void)
 {
 	unsigned int idx;
-	int res;
 
 	for (idx = 0U; idx < NB_GATES; idx++) {
 		assert(gate_refcounts[idx] == 0);
@@ -2800,33 +2420,7 @@ static void sync_earlyboot_clocks_state(void)
 	stm32mp1_register_clock_parents_secure(BKPSRAM);
 
 	stm32mp1_register_clock_parents_secure(RTCAPB);
-
-	res = stm32mp_is_single_core();
-	if (res < 0) {
-		panic();
-	}
-
-	if (res == 0) {
-		stm32mp1_clk_enable_secure(RTCAPB);
-	}
-}
-
-void stm32mp1_rcc_init_late(void)
-{
-#if defined(IMAGE_BL32)
-	int irq_num;
-
-	if (!stm32mp1_rcc_is_secure()) {
-		return;
-	}
-
-	irq_num = fdt_rcc_enable_it("wakeup");
-	if (irq_num < 0) {
-		panic();
-	}
-
-	plat_ic_set_interrupt_priority(irq_num, STM32MP1_IRQ_RCC_SEC_PRIO);
-#endif
+	stm32mp1_clk_enable_secure(RTCAPB);
 }
 
 int stm32mp1_clk_probe(void)

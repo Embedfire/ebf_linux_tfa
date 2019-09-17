@@ -457,13 +457,13 @@ uint32_t rcc_cal_scv_handler(uint32_t x1)
 
 	switch (x1) {
 	case CK_CSI:
-		if (stm32mp1_rcc_start_csi_cal() ==  0) {
+		if (stm32mp1_calib_start_csi_cal() ==  0) {
 			ret = STM32_SMC_OK;
 		}
 		break;
 
 	case CK_HSI:
-		if (stm32mp1_rcc_start_hsi_cal() == 0) {
+		if (stm32mp1_calib_start_hsi_cal() == 0) {
 			ret = STM32_SMC_OK;
 		}
 		break;

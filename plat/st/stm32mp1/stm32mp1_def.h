@@ -14,6 +14,7 @@
 #include <dt-bindings/reset/stm32mp1-resets.h>
 #include <dt-bindings/soc/st,stm32-etzpc.h>
 #include <etzpc.h>
+#include <stm32mp1_calib.h>
 #include <stm32mp1_clkfunc.h>
 #include <stm32mp1_clk.h>
 #include <stm32mp1_context.h>
@@ -203,9 +204,9 @@ enum ddr_type {
 
 #define STM32MP_NAND_BL33_OFFSET	U(0x00200000)
 #ifdef AARCH32_SP_OPTEE
-#define STM32MP_NAND_TEEH_OFFSET	U(0x00400000)
-#define STM32MP_NAND_TEED_OFFSET	U(0x00480000)
-#define STM32MP_NAND_TEEX_OFFSET	U(0x00500000)
+#define STM32MP_NAND_TEEH_OFFSET	U(0x00600000)
+#define STM32MP_NAND_TEED_OFFSET	U(0x00680000)
+#define STM32MP_NAND_TEEX_OFFSET	U(0x00700000)
 #endif
 
 /*******************************************************************************
@@ -374,7 +375,6 @@ enum ddr_type {
 #define UID2_OTP			U(15)
 #define PACKAGE_OTP			U(16)
 #define HW2_OTP				U(18) /* HW watchdog OTP */
-#define BOARD_OTP			U(59)
 
 /* OTP mask */
 /* DATA0 */
@@ -392,6 +392,9 @@ enum ddr_type {
 #define IWDG_HW_POS			3
 #define IWDG_FZ_STOP_POS		5
 #define IWDG_FZ_STANDBY_POS		7
+
+/* HW2 OTP */
+#define HW2_OTP_PRODUCT_BELOW_2V5	BIT(13)
 
 /* NAND OTP */
 /* NAND parameter storage flag */
@@ -447,7 +450,12 @@ enum ddr_type {
 #define PLAT_MAX_TAMP_INT		U(5)
 #define PLAT_MAX_TAMP_EXT		U(3)
 #define TAMP_BASE			U(0x5C00A000)
+#define TAMP_SMCR			(TAMP_BASE + U(0x20))
 #define TAMP_BKP_REGISTER_BASE		(TAMP_BASE + U(0x100))
+#define TAMP_BKP_SEC_NUMBER		U(10)
+#define TAMP_BKP_SEC_WDPROT_SHIFT	U(16)
+#define TAMP_BKP_SEC_RWDPROT_SHIFT	U(0)
+
 
 #if !(defined(__LINKER__) || defined(__ASSEMBLY__))
 static inline uint32_t tamp_bkpr(uint32_t idx)
@@ -523,6 +531,7 @@ static inline uint32_t tamp_bkpr(uint32_t idx)
 /*******************************************************************************
  * Device Tree defines
  ******************************************************************************/
+#define DT_BSEC_COMPAT			"st,stm32mp15-bsec"
 #define DT_PWR_COMPAT			"st,stm32mp1-pwr"
 #define DT_RCC_CLK_COMPAT		"st,stm32mp1-rcc"
 #define DT_SYSCFG_COMPAT		"st,stm32mp157-syscfg"

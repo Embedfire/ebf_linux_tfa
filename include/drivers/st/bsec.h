@@ -135,7 +135,7 @@
  */
 #define BSEC_LOCK_UPPER_OTP			0x00
 #define BSEC_LOCK_DEBUG				0x02
-#define BSEC_LOCK_PROGRAM			0x03
+#define BSEC_LOCK_PROGRAM			0x04
 
 /* Values for struct bsec_config::freq */
 #define FREQ_10_20_MHZ			0x0
@@ -189,16 +189,15 @@ uint32_t bsec_get_version(void);
 uint32_t bsec_get_id(void);
 uint32_t bsec_get_magic_id(void);
 
-bool bsec_write_sr_lock(uint32_t otp, uint32_t value);
-bool bsec_read_sr_lock(uint32_t otp);
-bool bsec_write_sw_lock(uint32_t otp, uint32_t value);
-bool bsec_read_sw_lock(uint32_t otp);
-bool bsec_write_sp_lock(uint32_t otp, uint32_t value);
-bool bsec_read_sp_lock(uint32_t otp);
-bool bsec_wr_lock(uint32_t otp);
-uint32_t bsec_otp_lock(uint32_t service, uint32_t value);
+uint32_t bsec_set_sr_lock(uint32_t otp);
+uint32_t bsec_read_sr_lock(uint32_t otp, bool *value);
+uint32_t bsec_set_sw_lock(uint32_t otp);
+uint32_t bsec_read_sw_lock(uint32_t otp, bool *value);
+uint32_t bsec_set_sp_lock(uint32_t otp);
+uint32_t bsec_read_sp_lock(uint32_t otp, bool *value);
+uint32_t bsec_read_permanent_lock(uint32_t otp, bool *value);
+uint32_t bsec_otp_lock(uint32_t service);
 
-bool bsec_mode_is_closed_device(void);
 uint32_t bsec_shadow_read_otp(uint32_t *otp_value, uint32_t word);
 uint32_t bsec_check_nsec_access_rights(uint32_t otp);
 

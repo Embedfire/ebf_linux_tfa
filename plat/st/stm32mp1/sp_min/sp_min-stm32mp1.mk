@@ -7,6 +7,7 @@
 SP_MIN_WITH_SECURE_FIQ	:=	1
 
 BL32_SOURCES		+=	plat/common/aarch32/platform_mp_stack.S		\
+				drivers/st/clk/stm32mp1_calib.c			\
 				drivers/st/etzpc/etzpc.c			\
 				drivers/st/rng/stm32_rng.c			\
 				drivers/st/rtc/stm32_rtc.c			\

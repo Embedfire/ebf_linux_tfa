@@ -83,21 +83,16 @@ static void nand_calc_timing(NAND_HandleTypeDef *hNand)
 	nand_timings *tims = &hNand->Info.timings;
 	unsigned long hclk = stm32mp_clk_get_rate(FMC_K);
 	unsigned long hclkp = FMC_NSEC_PER_SEC / (hclk / 1000);
-	int tar, tclr, thiz, twait, tset_mem, tset_att, thold_mem, thold_att;
+	unsigned long timing, tar, tclr, thiz, twait;
+	unsigned long tset_mem, tset_att, thold_mem, thold_att;
 
-	tar = hclkp;
-	if (tar < FMC_TAR_MIN)
-		tar = FMC_TAR_MIN;
-	tims->tar = div_round_up(tar, hclkp) - 1;
-	if (tims->tar > FMC_PCR_TIMING_MASK)
-		tims->tar = FMC_PCR_TIMING_MASK;
+	tar = MAX(hclkp, FMC_TAR_MIN);
+	timing = div_round_up(tar, hclkp) - 1;
+	tims->tar = MIN(timing, FMC_PCR_TIMING_MASK);
 
-	tclr = hclkp;
-	if (tclr < FMC_TCLR_MIN)
-		tclr = FMC_TCLR_MIN;
-	tims->tclr = div_round_up(tclr, hclkp) - 1;
-	if (tims->tclr > FMC_PCR_TIMING_MASK)
-		tims->tclr = FMC_PCR_TIMING_MASK;
+	tclr = MAX(hclkp, FMC_TCLR_MIN);
+	timing = div_round_up(tclr, hclkp) - 1;
+	tims->tclr = MIN(timing, FMC_PCR_TIMING_MASK);
 
 	tims->thiz = FMC_THIZ;
 	thiz = (tims->thiz + 1) * hclkp;
@@ -107,16 +102,11 @@ static void nand_calc_timing(NAND_HandleTypeDef *hNand)
 	 * tWAIT > tWP
 	 * tWAIT > tREA + tIO
 	 */
-	twait = hclkp;
-	if (twait < FMC_TRP_MIN)
-		twait = FMC_TRP_MIN;
-	if (twait < FMC_TWP_MIN)
-		twait = FMC_TWP_MIN;
-	if (twait < FMC_TREA_MAX + FMC_TIO)
-		twait = FMC_TREA_MAX + FMC_TIO;
-	tims->twait = div_round_up(twait, hclkp);
-	if (tims->twait == 0)
-		tims->twait = 1;
+	twait = MAX(hclkp, FMC_TRP_MIN);
+	twait = MAX(twait, FMC_TWP_MIN);
+	twait = MAX(twait, FMC_TREA_MAX + FMC_TIO);
+	timing = div_round_up(twait, hclkp);
+	tims->twait = MIN(MAX(timing, 1UL), FMC_PMEM_PATT_TIMING_MASK);
 
 	/*
 	 * tSETUP_MEM > tCS - tWAIT
@@ -124,37 +114,39 @@ static void nand_calc_timing(NAND_HandleTypeDef *hNand)
 	 * tSETUP_MEM > tDS - (tWAIT - tHIZ)
 	 */
 	tset_mem = hclkp;
-	if (twait < FMC_TCS_MIN && (tset_mem < FMC_TCS_MIN - twait))
+	if (twait < FMC_TCS_MIN && (tset_mem < FMC_TCS_MIN - twait)) {
 		tset_mem = FMC_TCS_MIN - twait;
-	if (twait < FMC_TALS_MIN && (tset_mem < FMC_TALS_MIN - twait))
+	}
+	if (twait < FMC_TALS_MIN && (tset_mem < FMC_TALS_MIN - twait)) {
 		tset_mem = FMC_TALS_MIN - twait;
+	}
 	if (twait > thiz && (twait - thiz < FMC_TDS_MIN) &&
-	    (tset_mem < FMC_TDS_MIN - (twait - thiz)))
+	    (tset_mem < FMC_TDS_MIN - (twait - thiz))) {
 		tset_mem = FMC_TDS_MIN - (twait - thiz);
-	tims->tset_mem = div_round_up(tset_mem, hclkp);
-	if (tims->tset_mem == 0)
-		tims->tset_mem = 1;
+	}
+	timing = div_round_up(tset_mem, hclkp);
+	tims->tset_mem = MIN(MAX(timing, 1UL), FMC_PMEM_PATT_TIMING_MASK);
 
 	/*
 	 * tHOLD_MEM > tCH
 	 * tHOLD_MEM > tREH - tSETUP_MEM
 	 * tHOLD_MEM > max(tRC, tWC) - (tSETUP_MEM + tWAIT)
 	 */
-	thold_mem = hclkp;
-	if (thold_mem < FMC_TCH_MIN)
-		thold_mem = FMC_TCH_MIN;
+	thold_mem = MAX(hclkp, FMC_TCH_MIN);
 	if (tset_mem < FMC_TREH_MIN &&
-	    (thold_mem < FMC_TREH_MIN - tset_mem))
+	    (thold_mem < FMC_TREH_MIN - tset_mem)) {
 		thold_mem = FMC_TREH_MIN - tset_mem;
+	}
 	if ((tset_mem + twait < FMC_TRC_MIN) &&
-	    (thold_mem < FMC_TRC_MIN - (tset_mem + twait)))
+	    (thold_mem < FMC_TRC_MIN - (tset_mem + twait))) {
 		thold_mem = FMC_TRC_MIN  - (tset_mem + twait);
+	}
 	if ((tset_mem + twait < FMC_TWC_MIN) &&
-	    (thold_mem < FMC_TWC_MIN - (tset_mem + twait)))
+	    (thold_mem < FMC_TWC_MIN - (tset_mem + twait))) {
 		thold_mem = FMC_TWC_MIN - (tset_mem + twait);
-	tims->thold_mem = div_round_up(thold_mem, hclkp);
-	if (tims->thold_mem == 0)
-		tims->thold_mem = 1;
+	}
+	timing = div_round_up(thold_mem, hclkp);
+	tims->thold_mem = MIN(MAX(timing, 1UL), FMC_PMEM_PATT_TIMING_MASK);
 
 	/*
 	 * tSETUP_ATT > tCS - tWAIT
@@ -164,21 +156,25 @@ static void nand_calc_timing(NAND_HandleTypeDef *hNand)
 	 * tSETUP_ATT > tDS - (tWAIT - tHIZ)
 	 */
 	tset_att = hclkp;
-	if (twait < FMC_TCS_MIN && (tset_att < FMC_TCS_MIN - twait))
+	if (twait < FMC_TCS_MIN && (tset_att < FMC_TCS_MIN - twait)) {
 		tset_att = FMC_TCS_MIN - twait;
-	if (twait < FMC_TCLS_MIN && (tset_att < FMC_TCLS_MIN - twait))
+	}
+	if (twait < FMC_TCLS_MIN && (tset_att < FMC_TCLS_MIN - twait)) {
 		tset_att = FMC_TCLS_MIN - twait;
-	if (twait < FMC_TALS_MIN && (tset_att < FMC_TALS_MIN - twait))
+	}
+	if (twait < FMC_TALS_MIN && (tset_att < FMC_TALS_MIN - twait)) {
 		tset_att = FMC_TALS_MIN - twait;
+	}
 	if (thold_mem < FMC_TRHW_MIN &&
-	    (tset_att < FMC_TRHW_MIN - thold_mem))
+	    (tset_att < FMC_TRHW_MIN - thold_mem)) {
 		tset_att = FMC_TRHW_MIN - thold_mem;
+	}
 	if (twait > thiz && (twait - thiz < FMC_TDS_MIN) &&
-	    (tset_att < FMC_TDS_MIN - (twait - thiz)))
+	    (tset_att < FMC_TDS_MIN - (twait - thiz))) {
 		tset_att = FMC_TDS_MIN - (twait - thiz);
-	tims->tset_att = div_round_up(tset_att, hclkp);
-	if (tims->tset_att == 0)
-		tims->tset_att = 1;
+	}
+	timing = div_round_up(tset_att, hclkp);
+	tims->tset_att = MIN(MAX(timing, 1UL), FMC_PMEM_PATT_TIMING_MASK);
 
 	/*
 	 * tHOLD_ATT > tALH
@@ -193,38 +189,42 @@ static void nand_calc_timing(NAND_HandleTypeDef *hNand)
 	 * tHOLD_ATT > tRC - (tSETUP_ATT + tWAIT)
 	 * tHOLD_ATT > tWC - (tSETUP_ATT + tWAIT)
 	 */
-	thold_att = hclkp;
-	if (thold_att < FMC_TALH_MIN)
-		thold_att = FMC_TALH_MIN;
-	if (thold_att < FMC_TCH_MIN)
-		thold_att = FMC_TCH_MIN;
-	if (thold_att < FMC_TCLH_MIN)
-		thold_att = FMC_TCLH_MIN;
-	if (thold_att < FMC_TCOH_MIN)
-		thold_att = FMC_TCOH_MIN;
-	if (thold_att < FMC_TDH_MIN)
-		thold_att = FMC_TDH_MIN;
+	thold_att = MAX(hclkp, FMC_TALH_MIN);
+	thold_att = MAX(hclkp, FMC_TCH_MIN);
+	thold_att = MAX(hclkp, FMC_TCLH_MIN);
+	thold_att = MAX(hclkp, FMC_TCOH_MIN);
+	thold_att = MAX(hclkp, FMC_TDH_MIN);
 	if ((FMC_TWB_MAX + FMC_TIO + FMC_TSYNC > tset_mem) &&
-	    (thold_att < FMC_TWB_MAX + FMC_TIO + FMC_TSYNC - tset_mem))
+	    (thold_att < FMC_TWB_MAX + FMC_TIO + FMC_TSYNC - tset_mem)) {
 		thold_att = FMC_TWB_MAX + FMC_TIO + FMC_TSYNC - tset_mem;
+	}
 	if (tset_mem < FMC_TADL_MIN &&
-	    (thold_att < FMC_TADL_MIN - tset_mem))
+	    (thold_att < FMC_TADL_MIN - tset_mem)) {
 		thold_att = FMC_TADL_MIN - tset_mem;
+	}
 	if (tset_mem < FMC_TWH_MIN &&
-	    (thold_att < FMC_TWH_MIN - tset_mem))
+	    (thold_att < FMC_TWH_MIN - tset_mem)) {
 		thold_att = FMC_TWH_MIN - tset_mem;
+	}
 	if (tset_mem < FMC_TWHR_MIN &&
-	    (thold_att < FMC_TWHR_MIN - tset_mem))
+	   (thold_att < FMC_TWHR_MIN - tset_mem)) {
 		thold_att = FMC_TWHR_MIN - tset_mem;
+	}
 	if (tset_att + twait < FMC_TRC_MIN &&
-	    (thold_att < FMC_TRC_MIN - (tset_att + twait)))
+	    (thold_att < FMC_TRC_MIN - (tset_att + twait))) {
 		thold_att = FMC_TRC_MIN - (tset_att + twait);
+	}
 	if (tset_att + twait < FMC_TWC_MIN &&
-	    (thold_att < FMC_TWC_MIN - (tset_att + twait)))
+	    (thold_att < FMC_TWC_MIN - (tset_att + twait))) {
 		thold_att = FMC_TWC_MIN - (tset_att + twait);
-	tims->thold_att = div_round_up(thold_att, hclkp);
-	if (tims->thold_att == 0)
-		tims->thold_att = 1;
+	}
+	timing = div_round_up(thold_att, hclkp);
+	tims->thold_att = MIN(MAX(timing, 1UL), FMC_PMEM_PATT_TIMING_MASK);
+
+	VERBOSE("Nand timings: %u - %u - %u - %u - %u - %u - %u - %u\n",
+		tims->tclr, tims->tar, tims->thiz, tims->twait,
+		tims->thold_mem, tims->tset_mem,
+		tims->thold_att, tims->tset_att);
 }
 
 /*****************************************************************************

@@ -8,7 +8,7 @@
 
 / {
 	soc {
-		iwdg1: iwdg@5C003000 {
+		iwdg1: watchdog@5C003000 {
 			compatible = "st,stm32mp1-iwdg";
 			reg = <0x5C003000 0x400>;
 			clocks = <&rcc IWDG1>, <&rcc CK_LSI>;
@@ -40,9 +40,6 @@
 	/* Spare field to align on 32-bit OTP granularity  */
 	spare_ns_ea: spare_ns_ea@ea {
 		reg = <0xea 0x2>;
-	};
-	board_id: board_id@ec {
-		reg = <0xec 0x4>;
 	};
 };
 

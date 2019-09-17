@@ -22,6 +22,7 @@
 #include <stm32_console.h>
 #include <stm32_gpio.h>
 #include <stm32_iwdg.h>
+#include <stm32mp_auth.h>
 #include <stm32mp_common.h>
 #include <stm32mp_dt.h>
 #include <stm32mp_pmic.h>
@@ -42,6 +43,7 @@
 
 static struct console_stm32 console;
 static enum boot_device_e boot_device = BOOT_DEVICE_BOARD;
+static struct auth_ops stm32mp_auth_ops;
 
 static void print_reset_reason(void)
 {
@@ -280,12 +282,16 @@ void bl2_el3_plat_arch_setup(void)
 			   RCC_PWRLPDLYCR_PWRLP_DLY_MASK,
 			   PWRLP_TEMPO_5_HSI);
 
-	/* Keep retention and backup ram content in standby */
-	mmio_setbits_32(pwr_base + PWR_CR2, PWR_CR2_BREN);
-	mmio_setbits_32(pwr_base + PWR_CR2, PWR_CR2_RREN);
+	/* Disable retention and backup RAM content after standby */
+	mmio_clrbits_32(pwr_base + PWR_CR2, PWR_CR2_BREN | PWR_CR2_RREN);
 
 	/* Disable MCKPROT */
 	mmio_clrbits_32(rcc_base + RCC_TZCR, RCC_TZCR_MCKPROT);
+
+	/* Enable BKP Register protection */
+	mmio_write_32(TAMP_SMCR,
+		      TAMP_BKP_SEC_NUMBER << TAMP_BKP_SEC_WDPROT_SHIFT |
+		      TAMP_BKP_SEC_NUMBER << TAMP_BKP_SEC_RWDPROT_SHIFT);
 
 	if ((boot_context->boot_action !=
 	     BOOT_API_CTX_BOOT_ACTION_WAKEUP_CSTANDBY) &&
@@ -322,6 +328,8 @@ void bl2_el3_plat_arch_setup(void)
 	if (stm32mp1_clk_init() < 0) {
 		panic();
 	}
+
+	stm32mp1_syscfg_init();
 
 	result = dt_get_stdout_uart_info(&dt_uart_info);
 
@@ -399,13 +407,18 @@ skip_console_init:
 		ERROR("Cannot save boot interface\n");
 	}
 
+	stm32mp_auth_ops.check_key =
+		boot_context->p_bootrom_ext_service_ecdsa_check_key;
+	stm32mp_auth_ops.verify_signature =
+		boot_context->p_bootrom_ext_service_ecdsa_verify_signature;
+
+	stm32mp_init_auth(&stm32mp_auth_ops);
+
 	stm32mp1_arch_security_setup();
 
 	print_reset_reason();
 
 	stm32mp_io_setup();
-
-	stm32mp1_syscfg_init();
 }
 
 #if defined(AARCH32_SP_OPTEE)
