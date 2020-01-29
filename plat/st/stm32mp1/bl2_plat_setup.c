@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2020, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -23,6 +23,7 @@
 #include <stm32_gpio.h>
 #include <stm32_iwdg.h>
 #include <stm32mp_auth.h>
+#include <stm32mp_clkfunc.h>
 #include <stm32mp_common.h>
 #include <stm32mp_dt.h>
 #include <stm32mp_pmic.h>
@@ -36,6 +37,7 @@
 #include <stm32mp1_ram.h>
 #include <stm32mp1_rcc.h>
 #include <stm32mp1_shared_resources.h>
+#include <stpmic1.h>
 #include <string.h>
 #include <xlat_tables_v2.h>
 
@@ -146,19 +148,13 @@ void bl2_platform_setup(void)
 {
 	int ret;
 
-	if (dt_pmic_status() > 0) {
-		initialize_pmic();
-#if STM32MP1_DEBUG_ENABLE
-		/* Program PMIC to keep debug ON */
-		if ((stm32mp1_dbgmcu_boot_debug_info() == 1) &&
-		    (stm32mp1_dbgmcu_is_debug_on() != 0)) {
-			VERBOSE("Program PMIC to keep debug ON\n");
-			if (pmic_keep_debug_unit() != 0) {
-				ERROR("PMIC not properly set for debug\n");
-			}
-		}
-#endif
-	}
+	/*
+	 * Map DDR non cacheable during its initialisation to avoid
+	 * speculative loads before accesses are fully setup.
+	 */
+	mmap_add_dynamic_region(STM32MP_DDR_BASE, STM32MP_DDR_BASE,
+				STM32MP_DDR_MAX_SIZE,
+				MT_NON_CACHEABLE | MT_RW | MT_NS);
 
 	ret = stm32mp1_ddr_probe();
 	if (ret < 0) {
@@ -166,13 +162,116 @@ void bl2_platform_setup(void)
 		panic();
 	}
 
+	mmap_remove_dynamic_region(STM32MP_DDR_BASE, STM32MP_DDR_MAX_SIZE);
+
 #ifdef AARCH32_SP_OPTEE
 	INFO("BL2 runs OP-TEE setup\n");
+
+	/* Map non secure DDR for BL33 load, now with cacheable attribute */
+	mmap_add_dynamic_region(STM32MP_DDR_BASE, STM32MP_DDR_BASE,
+				dt_get_ddr_size()  - STM32MP_DDR_S_SIZE -
+				STM32MP_DDR_SHMEM_SIZE,
+				MT_MEMORY | MT_RW | MT_NS);
+
+	mmap_add_dynamic_region(STM32MP_DDR_BASE + dt_get_ddr_size() -
+				STM32MP_DDR_S_SIZE - STM32MP_DDR_SHMEM_SIZE,
+				STM32MP_DDR_BASE + dt_get_ddr_size() -
+				STM32MP_DDR_S_SIZE - STM32MP_DDR_SHMEM_SIZE,
+				STM32MP_DDR_S_SIZE,
+				MT_MEMORY | MT_RW | MT_SECURE);
+
 	/* Initialize tzc400 after DDR initialization */
 	stm32mp1_security_setup();
 #else
 	INFO("BL2 runs SP_MIN setup\n");
+
+	/* Map non secure DDR for BL33 load, now with cacheable attribute */
+	mmap_add_dynamic_region(STM32MP_DDR_BASE, STM32MP_DDR_BASE,
+				dt_get_ddr_size(),
+				MT_MEMORY | MT_RW | MT_NS);
 #endif
+}
+
+static void update_monotonic_counter(void)
+{
+	uint32_t version;
+	uint32_t otp;
+
+	CASSERT(STM32_TF_VERSION <= MAX_MONOTONIC_VALUE,
+		assert_stm32mp1_monotonic_counter_reach_max);
+
+	/* Check if monotonic counter needs to be incremented */
+	if (stm32_get_otp_index(MONOTONIC_OTP, &otp, NULL) != 0) {
+		panic();
+	}
+
+	if (stm32_get_otp_value(MONOTONIC_OTP, &version) != 0) {
+		panic();
+	}
+
+	if ((version + 1U) < BIT(STM32_TF_VERSION)) {
+		uint32_t result;
+
+		/* Need to increment the monotonic counter */
+		version = BIT(STM32_TF_VERSION) - 1U;
+
+		result = bsec_program_otp(version, otp);
+		if (result != BSEC_OK) {
+			ERROR("BSEC: MONOTONIC_OTP program Error %i\n",
+			      result);
+			panic();
+		}
+		INFO("Monotonic counter has been incremented value 0x%x\n",
+		     version);
+	}
+}
+
+static void initialize_clock(bool wakeup_standby)
+{
+	uint32_t voltage_mv = 0U;
+	uint32_t freq_khz = 0U;
+	int ret;
+
+	if (wakeup_standby) {
+		stm32_get_pll1_settings_from_context();
+	}
+
+	/*
+	 * If no pre-defined PLL1 settings in DT, find the highest frequency
+	 * in the OPP table (in DT, compatible with plaform capabilities, or
+	 * in structure restored in RAM), and set related VDDCORE voltage.
+	 * If PLL1 settings found in DT, we consider VDDCORE voltage in DT is
+	 * consistent with it.
+	 */
+	if (!fdt_is_pll1_predefined()) {
+		if (wakeup_standby) {
+			ret = stm32mp1_clk_get_maxfreq_opp(&freq_khz,
+							   &voltage_mv);
+		} else {
+			ret = dt_get_max_opp_freqvolt(&freq_khz, &voltage_mv);
+		}
+
+		if (ret != 0) {
+			panic();
+		}
+
+		if (dt_pmic_status() > 0) {
+			int read_voltage;
+			const char *name = "buck1";
+
+			read_voltage = stpmic1_regulator_voltage_get(name);
+			if (voltage_mv != (uint32_t)read_voltage) {
+				if (stpmic1_regulator_voltage_set(name,
+						(uint16_t)voltage_mv) != 0) {
+					panic();
+				}
+			}
+		}
+	}
+
+	if (stm32mp1_clk_init(freq_khz) < 0) {
+		panic();
+	}
 }
 
 void bl2_el3_plat_arch_setup(void)
@@ -189,6 +288,7 @@ void bl2_el3_plat_arch_setup(void)
 		tamp_bkpr(BOOT_API_CORE1_MAGIC_NUMBER_TAMP_BCK_REG_IDX);
 	uint32_t bkpr_core1_addr =
 		tamp_bkpr(BOOT_API_CORE1_BRANCH_ADDRESS_TAMP_BCK_REG_IDX);
+	bool wakeup_standby = false;
 
 	mmap_add_region(BL_CODE_BASE, BL_CODE_BASE,
 			BL_CODE_END - BL_CODE_BASE,
@@ -201,14 +301,6 @@ void bl2_el3_plat_arch_setup(void)
 #endif
 
 #ifdef AARCH32_SP_OPTEE
-	/* OP-TEE image needs post load processing: keep RAM read/write */
-	mmap_add_region(STM32MP_DDR_BASE + dt_get_ddr_size() -
-			STM32MP_DDR_S_SIZE,
-			STM32MP_DDR_BASE + dt_get_ddr_size() -
-			STM32MP_DDR_S_SIZE,
-			STM32MP_DDR_S_SIZE,
-			MT_MEMORY | MT_RW | MT_SECURE);
-
 	mmap_add_region(STM32MP_OPTEE_BASE, STM32MP_OPTEE_BASE,
 			STM32MP_OPTEE_SIZE,
 			MT_MEMORY | MT_RW | MT_SECURE);
@@ -216,19 +308,12 @@ void bl2_el3_plat_arch_setup(void)
 	/* Prevent corruption of preloaded BL32 */
 	mmap_add_region(BL32_BASE, BL32_BASE,
 			BL32_LIMIT - BL32_BASE,
-			MT_MEMORY | MT_RO | MT_SECURE);
-
+			MT_RO_DATA | MT_SECURE);
 #endif
-	/* Map non secure DDR for BL33 load and DDR training area restore */
-	mmap_add_region(STM32MP_DDR_BASE,
-			STM32MP_DDR_BASE,
-			STM32MP_DDR_MAX_SIZE,
-			MT_MEMORY | MT_RW | MT_NS);
-
 	/* Prevent corruption of preloaded Device Tree */
 	mmap_add_region(DTB_BASE, DTB_BASE,
 			DTB_LIMIT - DTB_BASE,
-			MT_MEMORY | MT_RO | MT_SECURE);
+			MT_RO_DATA | MT_SECURE);
 
 	configure_mmu();
 
@@ -301,6 +386,10 @@ void bl2_el3_plat_arch_setup(void)
 		mmio_write_32(bkpr_core1_magic, 0);
 	}
 
+	if (mmio_read_32(bkpr_core1_addr) != 0U) {
+		wakeup_standby = true;
+	}
+
 	generic_delay_timer_init();
 
 #ifdef STM32MP_USB
@@ -325,9 +414,15 @@ void bl2_el3_plat_arch_setup(void)
 		panic();
 	}
 
-	if (stm32mp1_clk_init() < 0) {
-		panic();
+	if (dt_pmic_status() > 0) {
+		initialize_pmic();
+
+		if (!wakeup_standby) {
+			configure_pmic();
+		}
 	}
+
+	initialize_clock(wakeup_standby);
 
 	stm32mp1_syscfg_init();
 
@@ -418,6 +513,23 @@ skip_console_init:
 
 	print_reset_reason();
 
+	if (dt_pmic_status() > 0) {
+		initialize_pmic();
+		print_pmic_info_and_debug();
+#if STM32MP1_DEBUG_ENABLE
+		/* Program PMIC to keep debug ON */
+		if ((stm32mp1_dbgmcu_boot_debug_info() == 1) &&
+		    (stm32mp1_dbgmcu_is_debug_on())) {
+			VERBOSE("Program PMIC to keep debug ON\n");
+			if (pmic_keep_debug_unit() != 0) {
+				ERROR("PMIC not properly set for debug\n");
+			}
+		}
+#endif
+	}
+
+	update_monotonic_counter();
+
 	stm32mp_io_setup();
 }
 
@@ -438,11 +550,12 @@ static void set_mem_params_info(entry_point_info_t *ep_info,
 		unpaged->image_max_size = STM32MP_OPTEE_SIZE;
 	} else {
 		unpaged->image_base = STM32MP_DDR_BASE + dt_get_ddr_size() -
-				      STM32MP_DDR_S_SIZE;
+				      STM32MP_DDR_S_SIZE -
+				      STM32MP_DDR_SHMEM_SIZE;
 		unpaged->image_max_size = STM32MP_DDR_S_SIZE;
 	}
 	paged->image_base = STM32MP_DDR_BASE + dt_get_ddr_size() -
-			    STM32MP_DDR_S_SIZE;
+			    STM32MP_DDR_S_SIZE - STM32MP_DDR_SHMEM_SIZE;
 	paged->image_max_size = STM32MP_DDR_S_SIZE;
 }
 #endif

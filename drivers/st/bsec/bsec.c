@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2017-2018, STMicroelectronics - All Rights Reserved
- * Copyright (c) 2017, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -11,9 +11,9 @@
 #include <debug.h>
 #include <limits.h>
 #include <mmio.h>
+#include <platform_def.h>
 #include <spinlock.h>
 #include <stdint.h>
-#include <stm32mp_dt.h>
 
 #define BSEC_IP_VERSION_1_0	0x10
 #define BSEC_COMPAT		"st,stm32mp15-bsec"
@@ -82,33 +82,59 @@ static int bsec_dt_otp_nsec_access(void *fdt, int bsec_node)
 
 	fdt_for_each_subnode(bsec_subnode, fdt, bsec_node) {
 		const fdt32_t *cuint;
-		uint32_t reg;
+		uint32_t otp;
 		uint32_t i;
 		uint32_t size;
-		uint8_t status;
+		uint32_t offset;
+		uint32_t length;
 
 		cuint = fdt_getprop(fdt, bsec_subnode, "reg", NULL);
 		if (cuint == NULL) {
 			panic();
 		}
 
-		reg = fdt32_to_cpu(*cuint) / sizeof(uint32_t);
-		if (reg < STM32MP1_UPPER_OTP_START) {
+		offset = fdt32_to_cpu(*cuint);
+		cuint++;
+		length = fdt32_to_cpu(*cuint);
+
+		otp = offset / sizeof(uint32_t);
+
+		if (otp < STM32MP1_UPPER_OTP_START) {
+			unsigned int otp_end = round_up(offset + length,
+						       sizeof(uint32_t)) /
+					       sizeof(uint32_t);
+
+			if (otp_end > STM32MP1_UPPER_OTP_START) {
+				/*
+				 * OTP crosses Lower/Upper boundary, consider
+				 * only the upper part.
+				 */
+				otp = STM32MP1_UPPER_OTP_START;
+				length -= (STM32MP1_UPPER_OTP_START *
+					   sizeof(uint32_t)) - offset;
+				offset = STM32MP1_UPPER_OTP_START *
+					 sizeof(uint32_t);
+
+				WARN("OTP crosses Lower/Upper boundary\n");
+			} else {
+				continue;
+			}
+		}
+
+		if ((fdt_getprop(fdt, bsec_subnode,
+				 "st,non-secure-otp", NULL)) == NULL) {
 			continue;
 		}
 
-		status = fdt_get_status(bsec_subnode);
-		if ((status & DT_NON_SECURE) == 0U)  {
-			continue;
+		if (((offset % sizeof(uint32_t)) != 0) ||
+		    ((length % sizeof(uint32_t)) != 0)) {
+			ERROR("Unaligned non-secure OTP\n");
+			panic();
 		}
 
-		size = fdt32_to_cpu(*(cuint + 1)) / sizeof(uint32_t);
+		size = length / sizeof(uint32_t);
 
-		if ((fdt32_to_cpu(*(cuint + 1)) % sizeof(uint32_t)) != 0) {
-			size++;
-		}
-
-		for (i = reg; i < (reg + size); i++) {
+		for (i = otp; i < (otp + size); i++) {
 			enable_non_secure_access(i);
 		}
 	}
@@ -262,6 +288,79 @@ uint32_t bsec_get_config(struct bsec_config *cfg)
 						DENREG_LOCK_SHIFT);
 	cfg->prog_lock = (uint8_t)((value & GPLOCK_LOCK_MASK) >>
 						GPLOCK_LOCK_SHIFT);
+
+	return BSEC_OK;
+}
+
+/*
+ * bsec_find_otp_name_in_dt: get OTP ID and length in DT.
+ * name: sub-node name to look up.
+ * otp: pointer to read OTP number or NULL.
+ * otp_len: pointer to read OTP length in bits or NULL.
+ * return value: BSEC_OK if no error.
+ */
+uint32_t bsec_find_otp_name_in_dt(const char *name, uint32_t *otp,
+				  uint32_t *otp_len)
+{
+	void *fdt;
+	int node;
+	int index, len;
+	const fdt32_t *cuint;
+
+	if ((name == NULL) || (otp == NULL)) {
+		return BSEC_INVALID_PARAM;
+	}
+
+	if (fdt_get_address(&fdt) == 0) {
+		panic();
+	}
+
+	node = dt_get_node_by_compatible(DT_NVMEM_LAYOUT_COMPAT);
+	if (node < 0) {
+		return BSEC_ERROR;
+	}
+
+	index = fdt_stringlist_search(fdt, node, "nvmem-cell-names", name);
+	if (index < 0) {
+		return BSEC_ERROR;
+	}
+
+	cuint = fdt_getprop(fdt, node, "nvmem-cells", &len);
+	if (cuint == NULL) {
+		return BSEC_ERROR;
+	}
+
+	if ((index * (int)sizeof(uint32_t)) > len) {
+		return BSEC_ERROR;
+	}
+
+	cuint += index;
+
+	node = fdt_node_offset_by_phandle(fdt, fdt32_to_cpu(*cuint));
+	if (node < 0) {
+		ERROR("Malformed nvmem_layout node: ignored\n");
+		return BSEC_ERROR;
+	}
+
+	cuint = fdt_getprop(fdt, node, "reg", &len);
+	if ((cuint == NULL) || (len != (2 * (int)sizeof(uint32_t)))) {
+		ERROR("Malformed nvmem_layout node: ignored\n");
+		return BSEC_ERROR;
+	}
+
+	if (fdt32_to_cpu(*cuint) % sizeof(uint32_t)) {
+		ERROR("Misaligned nvmem_layout element: ignored\n");
+		return BSEC_ERROR;
+	}
+
+	if (otp != NULL) {
+		*otp = fdt32_to_cpu(*cuint) / sizeof(uint32_t);
+	}
+
+	if (otp_len != NULL) {
+		cuint++;
+		*otp_len = fdt32_to_cpu(*cuint) * CHAR_BIT;
+	}
 
 	return BSEC_OK;
 }

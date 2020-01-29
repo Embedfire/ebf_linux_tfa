@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -13,8 +13,6 @@
 #include <mmio.h>
 #include <platform.h>
 #include <platform_def.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
 #include <string.h>
 
 #define QSPI_COMPAT		"st,stm32f469-qspi"

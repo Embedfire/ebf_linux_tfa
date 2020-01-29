@@ -1,5 +1,5 @@
 /*
- * Copyright : STMicroelectronics 2017
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier:	GPL-2.0+	BSD-3-Clause
  */
@@ -8,7 +8,7 @@
 
 / {
 	soc {
-		iwdg1: watchdog@5C003000 {
+		iwdg1: watchdog@5c003000 {
 			compatible = "st,stm32mp1-iwdg";
 			reg = <0x5C003000 0x400>;
 			clocks = <&rcc IWDG1>, <&rcc CK_LSI>;
@@ -18,7 +18,7 @@
 			secure-status = "disabled";
 		};
 
-		etzpc: etzpc@5C007000 {
+		etzpc: etzpc@5c007000 {
 			compatible = "st,stm32-etzpc";
 			reg = <0x5C007000 0x400>;
 			clocks = <&rcc TZPC>;
@@ -26,20 +26,53 @@
 			secure-status = "okay";
 		};
 
-		stgen: stgen@5C008000 {
+		stgen: stgen@5c008000 {
 			compatible = "st,stm32-stgen";
 			reg = <0x5C008000 0x1000>;
+		};
+
+		nvmem_layout: nvmem_layout@0 {
+			compatible = "st,stm32-nvmem-layout";
+
+			nvmem-cells = <&part_number_otp>,
+				      <&monotonic_otp>,
+				      <&nand_otp>,
+				      <&uid_otp>,
+				      <&package_otp>,
+				      <&hw2_otp>;
+
+			nvmem-cell-names = "part_number_otp",
+					   "monotonic_otp",
+					   "nand_otp",
+					   "uid_otp",
+					   "package_otp",
+					   "hw2_otp";
 		};
 	};
 };
 
 &bsec {
-	mac_addr: mac_addr@e4 {
-		reg = <0xe4 0x6>;
+	part_number_otp: part_number_otp@4 {
+		reg = <0x4 0x1>;
 	};
-	/* Spare field to align on 32-bit OTP granularity  */
-	spare_ns_ea: spare_ns_ea@ea {
-		reg = <0xea 0x2>;
+	monotonic_otp: monotonic_otp@10 {
+		reg = <0x10 0x4>;
+	};
+	nand_otp: nand_otp@24 {
+		reg = <0x24 0x4>;
+	};
+	uid_otp: uid_otp@34 {
+		reg = <0x34 0xc>;
+	};
+	package_otp: package_otp@40 {
+		reg = <0x40 0x4>;
+	};
+	hw2_otp: hw2_otp@48 {
+		reg = <0x48 0x4>;
+	};
+	mac_addr: mac_addr@e4 {
+		reg = <0xe4 0x8>;
+		st,non-secure-otp;
 	};
 };
 

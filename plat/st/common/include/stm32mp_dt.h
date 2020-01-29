@@ -41,10 +41,17 @@ int dt_set_stdout_pinctrl(void);
 void dt_fill_device_info(struct dt_node_info *info, int node);
 int dt_get_node(struct dt_node_info *info, int offset, const char *compat);
 int dt_get_stdout_uart_info(struct dt_node_info *info);
+int dt_get_node_by_compatible(const char *compatible);
+int dt_match_instance_by_compatible(const char *compatible, uintptr_t address);
+uintptr_t dt_get_peripheral_base(const char *compatible);
 uint32_t dt_get_ddr_size(void);
 uintptr_t dt_get_ddrctrl_base(void);
 uintptr_t dt_get_ddrphyc_base(void);
+uintptr_t dt_get_rcc_base(void);
 uintptr_t dt_get_pwr_base(void);
+int dt_get_max_opp_freqvolt(uint32_t *freq_khz, uint32_t *voltage_mv);
+int dt_get_all_opp_freqvolt(uint32_t *count, uint32_t *freq_khz_array,
+			    uint32_t *voltage_mv_array);
 uint32_t dt_get_pwr_vdd_voltage(void);
 uintptr_t dt_get_syscfg_base(void);
 const char *dt_get_board_model(void);

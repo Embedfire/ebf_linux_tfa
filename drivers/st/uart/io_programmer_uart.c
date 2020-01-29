@@ -1,12 +1,11 @@
 /*
- * Copyright (c) 2015-2017, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <arch_helpers.h>
 #include <assert.h>
-#include <boot_api.h>
 #include <debug.h>
 #include <errno.h>
 #include <io_driver.h>
@@ -16,8 +15,6 @@
 #include <io_uart.h>
 #include <platform_def.h>
 #include <stm32_iwdg.h>
-#include <stm32mp_auth.h>
-#include <stm32mp_dt.h>
 #include <string.h>
 
 /* USART bootloader protocol version V4.0*/

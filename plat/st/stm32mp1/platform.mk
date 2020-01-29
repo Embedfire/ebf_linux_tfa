@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2015-2020, ARM Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -11,13 +11,18 @@ USE_COHERENT_MEM	:=	0
 MULTI_CONSOLE_API	:=	1
 
 # Add specific ST version
-ST_VERSION 		:=	r1.5
+ST_VERSION 		:=	r3.0
 VERSION_STRING		:=	v${VERSION_MAJOR}.${VERSION_MINOR}-${ST_VERSION}(${BUILD_TYPE}):${BUILD_STRING}
 
 # Please don't increment this value without good understanding of
 # the monotonic counter
 STM32_TF_VERSION	?=	0
 $(eval $(call add_define_val,STM32_TF_VERSION,${STM32_TF_VERSION}))
+
+# Enable dynamic memory mapping
+PLAT_XLAT_TABLES_DYNAMIC :=	1
+$(eval $(call assert_boolean,PLAT_XLAT_TABLES_DYNAMIC))
+$(eval $(call add_define,PLAT_XLAT_TABLES_DYNAMIC))
 
 # Enable software PMIC programming in case of debug purpose
 STM32MP1_DEBUG_ENABLE	?=	1
@@ -134,6 +139,8 @@ PLAT_BL_COMMON_SOURCES	+=	${LIBFDT_SRCS}						\
 				drivers/st/iwdg/stm32_iwdg.c				\
 				drivers/st/pmic/stm32mp_pmic.c				\
 				drivers/st/pmic/stpmic1.c				\
+				drivers/st/regulator/stm32mp_dummy_regulator.c		\
+				drivers/st/regulator/stm32mp_regulator.c		\
 				drivers/st/reset/stm32mp1_reset.c			\
 				plat/st/common/stm32mp_dt.c				\
 				plat/st/common/stm32mp_shres_helpers.c			\
@@ -219,7 +226,7 @@ STM32IMAGE		?= ${STM32IMAGEPATH}/stm32image${BIN_EXT}
 .PHONY:			${STM32_TF_STM32}
 .SUFFIXES:
 
-all: check_dtc_version ${STM32_TF_STM32} stm32image
+all: check_dtc_version stm32image ${STM32_TF_STM32}
 
 ifeq ($(AARCH32_SP),sp_min)
 # BL32 is built only if using SP_MIN
@@ -231,6 +238,8 @@ distclean realclean clean: clean_stm32image
 
 stm32image:
 	${Q}${MAKE} CPPFLAGS="" --no-print-directory -C ${STM32IMAGEPATH}
+
+${STM32IMAGE}: stm32image
 
 clean_stm32image:
 	${Q}${MAKE} --no-print-directory -C ${STM32IMAGEPATH} clean
@@ -266,7 +275,7 @@ ${STM32_TF_BINARY}:	${STM32_TF_ELF}
 			@echo "Built $@ successfully"
 			@echo
 
-${STM32_TF_STM32}:	stm32image ${STM32_TF_BINARY}
+${STM32_TF_STM32}:	${STM32IMAGE} ${STM32_TF_BINARY}
 			@echo
 			@echo "Generated $@"
 			$(eval LOADADDR =  $(shell cat ${STM32_TF_MAPFILE} | grep RAM | awk '{print $$2}'))

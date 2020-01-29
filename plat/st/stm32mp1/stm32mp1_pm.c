@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -71,14 +71,8 @@ static int stm32_pwr_domain_on(u_register_t mpidr)
 		tamp_bkpr(BOOT_API_CORE1_BRANCH_ADDRESS_TAMP_BCK_REG_IDX);
 	uint32_t bkpr_core1_magic =
 		tamp_bkpr(BOOT_API_CORE1_MAGIC_NUMBER_TAMP_BCK_REG_IDX);
-	int result;
 
-	result = stm32mp_is_single_core();
-	if (result < 0) {
-		return PSCI_E_INTERN_FAIL;
-	}
-
-	if (result == 1) {
+	if (stm32mp_is_single_core()) {
 		return PSCI_E_INTERN_FAIL;
 	}
 
@@ -203,7 +197,7 @@ static void __dead2 stm32_system_off(void)
 {
 	uint32_t soc_mode = stm32mp1_get_lp_soc_mode(PSCI_MODE_SYSTEM_OFF);
 
-	if (stm32mp_is_single_core() == 0) {
+	if (!stm32mp_is_single_core()) {
 		/* Prepare Core 1 reset */
 		mmio_setbits_32(stm32mp_rcc_base() + RCC_MP_GRSTCSETR,
 				RCC_MP_GRSTCSETR_MPUP1RST);

@@ -8,12 +8,17 @@
 #define STM32MP1_DEF_H
 
 #ifndef __ASSEMBLY__
+#include <boot_api.h>
 #include <bsec.h>
 #include <dt-bindings/clock/stm32mp1-clks.h>
 #include <dt-bindings/clock/stm32mp1-clksrc.h>
 #include <dt-bindings/reset/stm32mp1-resets.h>
 #include <dt-bindings/soc/st,stm32-etzpc.h>
 #include <etzpc.h>
+#include <stm32mp_auth.h>
+#include <stm32mp_common.h>
+#include <stm32mp_dt.h>
+#include <stm32mp_shres_helpers.h>
 #include <stm32mp1_calib.h>
 #include <stm32mp1_clkfunc.h>
 #include <stm32mp1_clk.h>
@@ -29,6 +34,7 @@
 #include <stm32mp1_shared_resources.h>
 #include <stm32mp1_usb_desc.h>
 #include <stm32mp1xx_hal_uart.h>
+#include <usb_ctx.h>
 #endif
 #include <tbbr_img_def.h>
 #include <utils_def.h>
@@ -45,9 +51,16 @@
 #define STM32MP153A_PART_NB	U(0x05000025)
 #define STM32MP151C_PART_NB	U(0x0500002E)
 #define STM32MP151A_PART_NB	U(0x0500002F)
+#define STM32MP157F_PART_NB	U(0x05000080)
+#define STM32MP157D_PART_NB	U(0x05000081)
+#define STM32MP153F_PART_NB	U(0x050000A4)
+#define STM32MP153D_PART_NB	U(0x050000A5)
+#define STM32MP151F_PART_NB	U(0x050000AE)
+#define STM32MP151D_PART_NB	U(0x050000AF)
 
 #define STM32MP1_REV_A		U(0x1000)
 #define STM32MP1_REV_B		U(0x2000)
+#define STM32MP1_REV_Z		U(0x2001)
 
 /*******************************************************************************
  * PACKAGE ID
@@ -85,7 +98,7 @@
 #define STM32MP_DDR_BASE		U(0xC0000000)
 #define STM32MP_DDR_MAX_SIZE		U(0x40000000)	/* Max 1GB */
 #ifdef AARCH32_SP_OPTEE
-#define STM32MP_DDR_S_SIZE		U(0x02000000)	/* 32 MB */
+#define STM32MP_DDR_S_SIZE		U(0x01E00000)	/* 30 MB */
 #define STM32MP_DDR_SHMEM_SIZE		U(0x00200000)	/* 2 MB */
 #else
 #define STM32MP_DDR_S_SIZE		U(0)		/* DDR is non secure */
@@ -122,9 +135,9 @@ enum ddr_type {
 					 STM32MP_OPTEE_BASE)
 #else
 #if STACK_PROTECTOR_ENABLED
-#define STM32MP_BL32_SIZE		U(0x00011000)	/* 68 Ko for BL32 */
+#define STM32MP_BL32_SIZE		U(0x00012000)	/* 72 Ko for BL32 */
 #else
-#define STM32MP_BL32_SIZE		U(0x00010000)	/* 64 Ko for BL32 */
+#define STM32MP_BL32_SIZE		U(0x00011000)	/* 68 Ko for BL32 */
 #endif
 #endif
 
@@ -134,30 +147,35 @@ enum ddr_type {
 
 #ifdef AARCH32_SP_OPTEE
 #if STACK_PROTECTOR_ENABLED
-#define STM32MP_BL2_SIZE		U(0x00019000)	/* 100 Ko for BL2 */
+#define STM32MP_BL2_SIZE		U(0x0001A000)	/* 104 Ko for BL2 */
 #else
-#define STM32MP_BL2_SIZE		U(0x00017000)	/* 92 Ko for BL2 */
+#define STM32MP_BL2_SIZE		U(0x00018000)	/* 96 Ko for BL2 */
 #endif
 #else
 #if STACK_PROTECTOR_ENABLED
-#define STM32MP_BL2_SIZE		U(0x00018000)	/* 96 Ko for BL2 */
+#define STM32MP_BL2_SIZE		U(0x00019000)	/* 100 Ko for BL2 */
 #else
-#define STM32MP_BL2_SIZE		U(0x00016000)	/* 88 Ko for BL2 */
+#define STM32MP_BL2_SIZE		U(0x00017000)	/* 92 Ko for BL2 */
 #endif
 #endif
 
 #define STM32MP_BL2_BASE		(STM32MP_BL32_BASE - \
 					 STM32MP_BL2_SIZE)
 
-/* BL2 and BL32/sp_min require 7 tables */
-#define MAX_XLAT_TABLES			U(7)		/* 28 Ko for mapping */
+#if defined(STM32MP_USB)
+/* BL2 and BL32/sp_min require 5 finer granularity tables */
+ #define MAX_XLAT_TABLES			U(5)		/* 20 Ko for mapping */
+#else
+/* BL2 and BL32/sp_min require 4 finer granularity tables */
+ #define MAX_XLAT_TABLES			U(4)		/* 16 Ko for mapping */
+#endif
 
 /*
  * MAX_MMAP_REGIONS is usually:
  * BL stm32mp1_mmap size + mmap regions in *_plat_arch_setup
  */
 #if defined(IMAGE_BL2)
- #if (defined STM32MP_USB)
+ #if defined(STM32MP_USB)
   #define MAX_MMAP_REGIONS		12
  #else
   #define MAX_MMAP_REGIONS		11
@@ -365,21 +383,16 @@ enum ddr_type {
 
 #define OTP_MAX_SIZE			(STM32MP1_OTP_MAX_ID + 1U)
 
-/* OTP offsets */
-#define DATA0_OTP			U(0)
-#define PART_NUMBER_OTP			U(1)
-#define MONOTONIC_OTP			U(4)
-#define NAND_OTP			U(9)
-#define UID0_OTP			U(13)
-#define UID1_OTP			U(14)
-#define UID2_OTP			U(15)
-#define PACKAGE_OTP			U(16)
-#define HW2_OTP				U(18) /* HW watchdog OTP */
+/* OTP labels */
+#define PART_NUMBER_OTP			"part_number_otp"
+#define PACKAGE_OTP			"package_otp"
+#define HW2_OTP				"hw2_otp"
+#define NAND_OTP			"nand_otp"
+#define MONOTONIC_OTP			"monotonic_otp"
+#define UID_OTP				"uid_otp"
+#define BOARD_ID_OTP			"board_id"
 
 /* OTP mask */
-/* DATA0 */
-#define DATA0_OTP_SECURED		BIT(6)
-
 /* PART NUMBER */
 #define PART_SHIFT			0
 #define PART_MASK			GENMASK_32(7, 0)
@@ -431,7 +444,11 @@ enum ddr_type {
 #define NAND_ECC_BIT_NB_4_BITS		2
 #define NAND_ECC_BIT_NB_8_BITS		3
 
+/* MONOTONIC OTP */
 #define MAX_MONOTONIC_VALUE		32
+
+/* UID OTP */
+#define UID_WORD_NB			3
 
 /*******************************************************************************
  * STM32MP1 FMC
@@ -522,6 +539,14 @@ static inline uint32_t tamp_bkpr(uint32_t idx)
 #define TIM_MAX_INSTANCE		U(2)
 
 /*******************************************************************************
+ * STM32MP1 OPP
+ ******************************************************************************/
+#define PLAT_OPP_ID1			U(1)
+#define PLAT_OPP_ID2			U(2)
+#define PLAT_MAX_OPP_NB			U(2)
+#define PLAT_MAX_PLLCFG_NB		U(6)
+
+/*******************************************************************************
  * DEBUG
  ******************************************************************************/
 /*#define  ICACHE_OFF*/
@@ -531,9 +556,12 @@ static inline uint32_t tamp_bkpr(uint32_t idx)
 /*******************************************************************************
  * Device Tree defines
  ******************************************************************************/
-#define DT_BSEC_COMPAT			"st,stm32mp15-bsec"
+#define DT_NVMEM_LAYOUT_COMPAT		"st,stm32-nvmem-layout"
+#define DT_OPP_COMPAT			"operating-points-v2"
 #define DT_PWR_COMPAT			"st,stm32mp1-pwr"
 #define DT_RCC_CLK_COMPAT		"st,stm32mp1-rcc"
 #define DT_SYSCFG_COMPAT		"st,stm32mp157-syscfg"
+
+#define DT_PLL1_NODE_NAME		"st,pll@0"
 
 #endif /* STM32MP1_DEF_H */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
  */
@@ -381,6 +381,7 @@ struct stm32mp1_ddrphy {
 #define DDRPHYC_PTR0_TITMSRST_OFFSET		18
 #define DDRPHYC_PTR0_TITMSRST_MASK		GENMASK(21, 18)
 
+#define DDRPHYC_ACIOCR_ACOE			BIT(1)
 #define DDRPHYC_ACIOCR_ACPDD			BIT(3)
 #define DDRPHYC_ACIOCR_ACPDR			BIT(4)
 #define DDRPHYC_ACIOCR_CKPDD_MASK		GENMASK(10, 8)
@@ -400,6 +401,7 @@ struct stm32mp1_ddrphy {
 #define DDRPHYC_DSGCR_ODTPDD_MASK		GENMASK(23, 20)
 #define DDRPHYC_DSGCR_ODTPDD_0			BIT(20)
 #define DDRPHYC_DSGCR_NL2PD			BIT(24)
+#define DDRPHYC_DSGCR_CKOE			BIT(28)
 
 #define DDRPHYC_ZQ0CRN_ZDATA_MASK		GENMASK(27, 0)
 #define DDRPHYC_ZQ0CRN_ZDATA_SHIFT		0

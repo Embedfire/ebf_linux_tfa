@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -10,7 +10,6 @@
 #include <mmio.h>
 #include <platform.h>
 #include <platform_def.h>
-#include <stm32mp_common.h>
 
 #define TIMEOUT_500US	us2tick(500)
 
@@ -127,6 +126,9 @@ static int ddr_sw_self_refresh_in(void)
 			   DDRPHYC_ACIOCR_CSPDD_MASK,
 			   DDRPHYC_ACIOCR_CSPDD_0);
 
+	/* Disable command/address output driver */
+	mmio_clrbits_32(ddrphyc_base + DDRPHYC_ACIOCR, DDRPHYC_ACIOCR_ACOE);
+
 	mmio_setbits_32(ddrphyc_base + DDRPHYC_DXCCR, DDRPHYC_DXCCR_DXPDD);
 
 	mmio_setbits_32(ddrphyc_base + DDRPHYC_DXCCR, DDRPHYC_DXCCR_DXPDR);
@@ -143,6 +145,12 @@ static int ddr_sw_self_refresh_in(void)
 
 	/* Disable PZQ cell (PUBL register) */
 	mmio_setbits_32(ddrphyc_base + DDRPHYC_ZQ0CR0, DDRPHYC_ZQ0CRN_ZQPD);
+
+	/* Set latch */
+	mmio_clrbits_32(ddrphyc_base + DDRPHYC_DSGCR, DDRPHYC_DSGCR_CKOE);
+
+	/* Additional delay to avoid early latch */
+	udelay(10);
 
 	/* Activate sw retention in PWRCTRL */
 	pwr_regs_lock();
@@ -293,6 +301,9 @@ int ddr_sw_self_refresh_exit(void)
 	/* Enable pad drivers */
 	mmio_clrbits_32(ddrphyc_base + DDRPHYC_ACIOCR, DDRPHYC_ACIOCR_ACPDD);
 
+	/* Enable command/address output driver */
+	mmio_setbits_32(ddrphyc_base + DDRPHYC_ACIOCR, DDRPHYC_ACIOCR_ACOE);
+
 	mmio_clrbits_32(ddrphyc_base + DDRPHYC_ACIOCR,
 			DDRPHYC_ACIOCR_CKPDD_MASK);
 
@@ -302,6 +313,9 @@ int ddr_sw_self_refresh_exit(void)
 	mmio_clrbits_32(ddrphyc_base + DDRPHYC_DXCCR, DDRPHYC_DXCCR_DXPDD);
 
 	mmio_clrbits_32(ddrphyc_base + DDRPHYC_DXCCR, DDRPHYC_DXCCR_DXPDR);
+
+	/* Release latch */
+	mmio_setbits_32(ddrphyc_base + DDRPHYC_DSGCR, DDRPHYC_DSGCR_CKOE);
 
 	mmio_clrbits_32(ddrphyc_base + DDRPHYC_DSGCR,
 			DDRPHYC_DSGCR_ODTPDD_MASK);
@@ -369,6 +383,10 @@ void ddr_sr_mode_ssr(void)
 	uintptr_t rcc_ddritfcr = stm32mp_rcc_base() + RCC_DDRITFCR;
 	uintptr_t ddrctrl_base = stm32mp_ddrctrl_base();
 
+	if (!stm32mp_ddr_supports_ssr_asr()) {
+		return;
+	}
+
 	stm32mp1_clk_rcc_regs_lock();
 
 	mmio_setbits_32(rcc_ddritfcr, RCC_DDRITFCR_DDRC1LPEN);
@@ -420,6 +438,10 @@ void ddr_sr_mode_asr(void)
 {
 	uintptr_t rcc_ddritfcr = stm32mp_rcc_base() + RCC_DDRITFCR;
 	uintptr_t ddrctrl_base = stm32mp_ddrctrl_base();
+
+	if (!stm32mp_ddr_supports_ssr_asr()) {
+		return;
+	}
 
 	stm32mp1_clk_rcc_regs_lock();
 

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2017-2018, STMicroelectronics - All Rights Reserved
- * Copyright (c) 2017-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -17,8 +17,6 @@
 #include <platform_def.h>
 #include <stm32_iwdg.h>
 #include <stm32mp_clkfunc.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
 #include <string.h>
 #include <utils.h>
 

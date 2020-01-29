@@ -23,7 +23,6 @@
 #include <platform.h>
 #include <platform_def.h>
 #include <stdint.h>
-#include <stm32mp_common.h>
 #include <utils_def.h>
 
 /* Other internal NAND driver definitions */
@@ -190,10 +189,10 @@ static void nand_calc_timing(NAND_HandleTypeDef *hNand)
 	 * tHOLD_ATT > tWC - (tSETUP_ATT + tWAIT)
 	 */
 	thold_att = MAX(hclkp, FMC_TALH_MIN);
-	thold_att = MAX(hclkp, FMC_TCH_MIN);
-	thold_att = MAX(hclkp, FMC_TCLH_MIN);
-	thold_att = MAX(hclkp, FMC_TCOH_MIN);
-	thold_att = MAX(hclkp, FMC_TDH_MIN);
+	thold_att = MAX(thold_att, FMC_TCH_MIN);
+	thold_att = MAX(thold_att, FMC_TCLH_MIN);
+	thold_att = MAX(thold_att, FMC_TCOH_MIN);
+	thold_att = MAX(thold_att, FMC_TDH_MIN);
 	if ((FMC_TWB_MAX + FMC_TIO + FMC_TSYNC > tset_mem) &&
 	    (thold_att < FMC_TWB_MAX + FMC_TIO + FMC_TSYNC - tset_mem)) {
 		thold_att = FMC_TWB_MAX + FMC_TIO + FMC_TSYNC - tset_mem;
@@ -749,7 +748,7 @@ static Std_ReturnType Nand_ReadParameterPage(NAND_HandleTypeDef *hNand)
 static Std_ReturnType Nand_DetectAndInit(NAND_HandleTypeDef *hNand)
 {
 	NAND_IDTypeDef pNAND_ID;
-	uint32_t nand_param_in_otp, result;
+	uint32_t nand_param_in_otp;
 
 	assert(hNand);
 
@@ -759,9 +758,7 @@ static Std_ReturnType Nand_DetectAndInit(NAND_HandleTypeDef *hNand)
 	Nand_ReadIDCode(hNand, &pNAND_ID);
 
 	/* Check if NAND parameters are stored in OTP */
-	result = bsec_shadow_read_otp(&nand_param_in_otp, NAND_OTP);
-	if (result != BSEC_OK) {
-		ERROR("BSEC: NAND_OTP Error %i\n", result);
+	if (stm32_get_otp_value(NAND_OTP, &nand_param_in_otp) != 0) {
 		return STD_NOT_OK;
 	}
 

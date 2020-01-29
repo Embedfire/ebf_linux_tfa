@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2016-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -14,8 +14,6 @@
 #include <stdbool.h>
 #include <stm32_gpio.h>
 #include <stm32mp_clkfunc.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
 
 #define DT_GPIO_BANK_SHIFT	12
 #define DT_GPIO_BANK_MASK	0x1F000U
@@ -165,7 +163,7 @@ int dt_set_pinctrl_config(int node)
 	void *fdt;
 
 	if (fdt_get_address(&fdt) == 0) {
-		return -ENOENT;
+		return -FDT_ERR_NOTFOUND;
 	}
 
 	if (status == DT_DISABLED) {

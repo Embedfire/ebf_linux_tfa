@@ -15,6 +15,9 @@
 #include <stm32_iwdg.h>
 #include <stm32mp_common.h>
 #include <stm32mp_dt.h>
+#include <stm32mp_dummy_regulator.h>
+#include <stm32mp_pmic.h>
+#include <stm32mp_regulator.h>
 #include <stm32mp_reset.h>
 #include <xlat_tables_v2.h>
 
@@ -243,7 +246,7 @@ void __dead2 stm32mp_plat_reset(int cpu)
 		}
 	}
 
-	if (stm32mp_is_single_core() == 0) {
+	if (!stm32mp_is_single_core()) {
 		unsigned int sec_cpu = (cpu == STM32MP_PRIMARY_CPU) ?
 			STM32MP_SECONDARY_CPU : STM32MP_PRIMARY_CPU;
 
@@ -266,38 +269,131 @@ void __dead2 stm32mp_plat_reset(int cpu)
 	stm32mp_wait_cpu_reset();
 }
 
-static uint32_t get_part_number(void)
+int stm32_get_otp_index(const char *otp_name, uint32_t *otp_idx,
+			uint32_t *otp_len)
 {
-	uint32_t part_number = 0;
+	assert(otp_name != NULL);
+	assert(otp_idx != NULL);
 
-	if (bsec_shadow_read_otp(&part_number, PART_NUMBER_OTP) != BSEC_OK) {
-		ERROR("BSEC: PART_NUMBER_OTP Error\n");
+	if (bsec_find_otp_name_in_dt(otp_name, otp_idx, otp_len) != BSEC_OK) {
+		ERROR("BSEC: Get %s number Error\n", otp_name);
+		return -1;
+	}
+
+	return 0;
+}
+
+int stm32_get_otp_value(const char *otp_name, uint32_t *otp_val)
+{
+	uint32_t otp;
+
+	assert(otp_name != NULL);
+	assert(otp_val != NULL);
+
+	if (stm32_get_otp_index(otp_name, &otp, NULL) != 0) {
+		return -1;
+	}
+
+#if defined(IMAGE_BL2)
+	if (bsec_shadow_read_otp(otp_val, otp) != BSEC_OK) {
+		ERROR("BSEC: %s Read Error\n", otp_name);
+		return -1;
+	}
+#elif defined(IMAGE_BL32)
+	if (bsec_read_otp(otp_val, otp) != BSEC_OK) {
+		ERROR("BSEC: %s Read Error\n", otp_name);
+		return -1;
+	}
+#endif
+
+	return 0;
+}
+
+static int get_part_number(uint32_t *part_nb)
+{
+	uint32_t part_number;
+	uint32_t dev_id;
+
+	assert(part_nb != NULL);
+
+	if (stm32mp1_dbgmcu_get_chip_dev_id(&dev_id) < 0) {
+		return -1;
+	}
+
+	if (stm32_get_otp_value(PART_NUMBER_OTP, &part_number) != 0) {
 		return -1;
 	}
 
 	part_number = (part_number & PART_MASK) >> PART_SHIFT;
 
-	return (part_number | (stm32mp1_dbgmcu_get_chip_dev_id() << 16));
+	*part_nb = part_number | (dev_id << 16);
+
+	return 0;
 }
 
-static uint32_t get_cpu_package(void)
+static int get_cpu_package(uint32_t *cpu_package)
 {
-	uint32_t package = 0;
+	uint32_t package;
 
-	if (bsec_shadow_read_otp(&package, PACKAGE_OTP) != BSEC_OK) {
-		ERROR("BSEC: PART_NUMBER_OTP Error\n");
+	assert(cpu_package != NULL);
+
+	if (stm32_get_otp_value(PACKAGE_OTP, &package) != 0) {
 		return -1;
 	}
 
-	return ((package & PKG_MASK) >> PKG_SHIFT);
+	*cpu_package = (package & PKG_MASK) >> PKG_SHIFT;
+
+	return 0;
+}
+
+bool stm32mp_supports_cpu_opp(uint32_t opp_id)
+{
+	uint32_t part_number;
+	uint32_t id;
+
+	if (get_part_number(&part_number) != 0) {
+		ERROR("Cannot get part number\n");
+		panic();
+	}
+
+	switch (opp_id) {
+	case PLAT_OPP_ID1:
+	case PLAT_OPP_ID2:
+		id = opp_id;
+		break;
+	default:
+		return false;
+	}
+
+	switch (part_number) {
+	case STM32MP157F_PART_NB:
+	case STM32MP157D_PART_NB:
+	case STM32MP153F_PART_NB:
+	case STM32MP153D_PART_NB:
+	case STM32MP151F_PART_NB:
+	case STM32MP151D_PART_NB:
+		return true;
+	default:
+		return id == PLAT_OPP_ID1;
+	}
 }
 
 void stm32mp_print_cpuinfo(void)
 {
 	const char *cpu_s, *cpu_r, *pkg;
+	uint32_t part_number;
+	uint32_t cpu_package;
+	uint32_t chip_dev_id;
+	int ret;
 
 	/* MPUs Part Numbers */
-	switch (get_part_number()) {
+	ret = get_part_number(&part_number);
+	if (ret < 0) {
+		WARN("Cannot get part number\n");
+		return;
+	}
+
+	switch (part_number) {
 	case STM32MP157C_PART_NB:
 		cpu_s = "157C";
 		break;
@@ -316,13 +412,37 @@ void stm32mp_print_cpuinfo(void)
 	case STM32MP151A_PART_NB:
 		cpu_s = "151A";
 		break;
+	case STM32MP157F_PART_NB:
+		cpu_s = "157F";
+		break;
+	case STM32MP157D_PART_NB:
+		cpu_s = "157D";
+		break;
+	case STM32MP153F_PART_NB:
+		cpu_s = "153F";
+		break;
+	case STM32MP153D_PART_NB:
+		cpu_s = "153D";
+		break;
+	case STM32MP151F_PART_NB:
+		cpu_s = "151F";
+		break;
+	case STM32MP151D_PART_NB:
+		cpu_s = "151D";
+		break;
 	default:
 		cpu_s = "????";
 		break;
 	}
 
 	/* Package */
-	switch (get_cpu_package()) {
+	ret = get_cpu_package(&cpu_package);
+	if (ret < 0) {
+		WARN("Cannot get CPU package\n");
+		return;
+	}
+
+	switch (cpu_package) {
 	case PKG_AA_LBGA448:
 		pkg = "AA";
 		break;
@@ -341,12 +461,21 @@ void stm32mp_print_cpuinfo(void)
 	}
 
 	/* REVISION */
-	switch (stm32mp1_dbgmcu_get_chip_version()) {
+	ret = stm32mp1_dbgmcu_get_chip_version(&chip_dev_id);
+	if (ret < 0) {
+		WARN("Cannot get CPU version\n");
+		return;
+	}
+
+	switch (chip_dev_id) {
 	case STM32MP1_REV_A:
 		cpu_r = "A";
 		break;
 	case STM32MP1_REV_B:
 		cpu_r = "B";
+		break;
+	case STM32MP1_REV_Z:
+		cpu_r = "Z";
 		break;
 	default:
 		cpu_r = "?";
@@ -359,35 +488,8 @@ void stm32mp_print_cpuinfo(void)
 void stm32mp_print_boardinfo(void)
 {
 	uint32_t board_id = 0;
-	uint32_t board_otp;
-	int bsec_node, bsec_board_id_node;
-	void *fdt;
-	const fdt32_t *cuint;
 
-	if (fdt_get_address(&fdt) == 0) {
-		panic();
-	}
-
-	bsec_node = fdt_node_offset_by_compatible(fdt, -1, DT_BSEC_COMPAT);
-	if (bsec_node < 0) {
-		return;
-	}
-
-	bsec_board_id_node = fdt_subnode_offset(fdt, bsec_node, "board_id");
-	if (bsec_board_id_node <= 0) {
-		return;
-	}
-
-	cuint = fdt_getprop(fdt, bsec_board_id_node, "reg", NULL);
-	if (cuint == NULL) {
-		ERROR("board_id node without reg property\n");
-		panic();
-	}
-
-	board_otp = fdt32_to_cpu(*cuint) / sizeof(uint32_t);
-
-	if (bsec_shadow_read_otp(&board_id, board_otp) != BSEC_OK) {
-		ERROR("BSEC: PART_NUMBER_OTP Error\n");
+	if (stm32_get_otp_value(BOARD_ID_OTP, &board_id) != 0) {
 		return;
 	}
 
@@ -404,22 +506,35 @@ void stm32mp_print_boardinfo(void)
 	}
 }
 
-/*
- * This function determines if one single core is presently running. This is
- * done by OTP read.
- * Returns 1 if yes, 0 if more that one core is running, -1 if error.
- */
-int stm32mp_is_single_core(void)
+/* Return true when SoC provides a single Cortex-A7 core, and false otherwise */
+bool stm32mp_is_single_core(void)
 {
-	uint32_t part_number = get_part_number();
+	uint32_t part_number;
 
-	/* STM32MP151x is a single core */
-	if ((part_number == STM32MP151A_PART_NB) ||
-	    (part_number == STM32MP151C_PART_NB)) {
-		return 1;
+	if (get_part_number(&part_number) < 0) {
+		ERROR("Invalid part number, assume single core chip");
+		return true;
 	}
 
-	return 0;
+	switch (part_number) {
+	case STM32MP151A_PART_NB:
+	case STM32MP151C_PART_NB:
+	case STM32MP151D_PART_NB:
+	case STM32MP151F_PART_NB:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+/* Return true if DDR supports Software/Automatic Self-Refresh */
+bool stm32mp_ddr_supports_ssr_asr(void)
+{
+	uintptr_t ddrctrl_base = stm32mp_ddrctrl_base();
+	uint32_t mstr = mmio_read_32(ddrctrl_base + DDRCTRL_MSTR);
+
+	return (mstr & DDRCTRL_MSTR_LPDDR2) != 0U;
 }
 
 uint8_t stm32_iwdg_get_instance(uintptr_t base)
@@ -440,15 +555,9 @@ uint32_t stm32_iwdg_get_otp_config(uintptr_t base)
 	uint32_t iwdg_cfg = 0;
 	uint32_t otp_value;
 
-#if defined(IMAGE_BL2)
-	if (bsec_shadow_read_otp(&otp_value, HW2_OTP) != BSEC_OK) {
+	if (stm32_get_otp_value(HW2_OTP, &otp_value) != 0) {
 		panic();
 	}
-#elif defined(IMAGE_BL32)
-	if (bsec_read_otp(&otp_value, HW2_OTP) != BSEC_OK) {
-		panic();
-	}
-#endif
 
 	idx = stm32_iwdg_get_instance(base);
 
@@ -471,31 +580,36 @@ uint32_t stm32_iwdg_get_otp_config(uintptr_t base)
 uint32_t stm32_iwdg_shadow_update(uintptr_t base, uint32_t flags)
 {
 	uint32_t idx;
+	uint32_t otp_value;
 	uint32_t otp;
 	uint32_t result;
 
-	if (bsec_shadow_read_otp(&otp, HW2_OTP) != BSEC_OK) {
+	if (stm32_get_otp_index(HW2_OTP, &otp, NULL) != 0) {
+		panic();
+	}
+
+	if (stm32_get_otp_value(HW2_OTP, &otp_value) != 0) {
 		panic();
 	}
 
 	idx = stm32_iwdg_get_instance(base);
 
 	if ((flags & IWDG_DISABLE_ON_STOP) != 0) {
-		otp |= BIT(idx + IWDG_FZ_STOP_POS);
+		otp_value |= BIT(idx + IWDG_FZ_STOP_POS);
 	}
 
 	if ((flags & IWDG_DISABLE_ON_STANDBY) != 0) {
-		otp |= BIT(idx + IWDG_FZ_STANDBY_POS);
+		otp_value |= BIT(idx + IWDG_FZ_STANDBY_POS);
 	}
 
-	result = bsec_write_otp(otp, HW2_OTP);
+	result = bsec_write_otp(otp_value, otp);
 	if (result != BSEC_OK) {
 		return result;
 	}
 
 	/* Sticky lock OTP_IWDG (read and write) */
-	if ((bsec_set_sr_lock(HW2_OTP) != BSEC_OK) ||
-	    (bsec_set_sw_lock(HW2_OTP) != BSEC_OK)) {
+	if ((bsec_set_sr_lock(otp) != BSEC_OK) ||
+	    (bsec_set_sw_lock(otp) != BSEC_OK)) {
 		return BSEC_LOCK_FAIL;
 	}
 
@@ -523,4 +637,27 @@ enum etzpc_decprot_attributes stm32mp_etzpc_binding2decprot(uint32_t mode)
 	default:
 		panic();
 	}
+}
+
+int plat_bind_regulator(struct stm32mp_regulator *regu)
+{
+	void *fdt;
+	int regu_node;
+
+	if (fdt_get_address(&fdt) == 0) {
+		return false;
+	}
+
+	if ((dt_pmic_status() > 0) && is_pmic_regulator(regu)) {
+		bind_pmic_regulator(regu);
+	} else {
+		bind_dummy_regulator(regu);
+	}
+
+	regu_node = fdt_node_offset_by_phandle(fdt, regu->id);
+	if (fdt_getprop(fdt, regu_node, "regulator-always-on", NULL) != NULL) {
+		regu->always_on = true;
+	}
+
+	return 0;
 }

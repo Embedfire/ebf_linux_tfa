@@ -1,18 +1,15 @@
 /*
- * Copyright (C) 2018, STMicroelectronics - All Rights Reserved
+ * Copyright (C) 2018-2020, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
  */
 
 #include <arch_helpers.h>
-#include <boot_api.h>
 #include <debug.h>
 #include <errno.h>
 #include <libfdt.h>
 #include <mmio.h>
 #include <platform_def.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
 
 #define DDR_PATTERN	0xAAAAAAAAU
 #define DDR_ANTIPATTERN	0x55555555U
@@ -220,9 +217,8 @@ static int stm32mp1_ddr_setup(void)
 		return -ENOENT;
 	}
 
-	node = fdt_node_offset_by_compatible(fdt, -1, DT_DDR_COMPAT);
+	node = dt_get_node_by_compatible(DT_DDR_COMPAT);
 	if (node < 0) {
-		ERROR("%s: Cannot read DDR node in DT\n", __func__);
 		return -EINVAL;
 	}
 
@@ -291,11 +287,6 @@ static int stm32mp1_ddr_setup(void)
 	VERBOSE("%s : ram size(%x, %x)\n", __func__,
 		(uint32_t)priv->info.base, (uint32_t)priv->info.size);
 
-#ifndef DCACHE_OFF
-	write_sctlr(read_sctlr() & ~SCTLR_C_BIT);
-	dcsw_op_all(DC_OP_CISW);
-#endif
-
 	if (config.self_refresh) {
 		uret = ddr_test_rw_access();
 		if (uret != 0U) {
@@ -329,9 +320,8 @@ static int stm32mp1_ddr_setup(void)
 		}
 	}
 
-#ifndef DCACHE_OFF
-	write_sctlr(read_sctlr() | SCTLR_C_BIT);
-#endif
+	/* Switch to Automatic Self-Refresh */
+	ddr_sr_mode_asr();
 
 	return 0;
 }

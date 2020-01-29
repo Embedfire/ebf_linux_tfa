@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -10,8 +10,6 @@
 #include <platform_def.h>
 #include <stm32_gpio.h>
 #include <stm32mp_clkfunc.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
 #include <stm32mp1_clk.h>
 #include <stm32mp1_clkfunc.h>
 
@@ -56,6 +54,10 @@ int fdt_osc_read_freq(const char *name, uint32_t *freq)
 		if (strncmp(cchar, name, (size_t)ret) == 0) {
 			const fdt32_t *cuint;
 
+			if (fdt_get_status(subnode) == DT_DISABLED) {
+				goto exit;
+			}
+
 			cuint = fdt_getprop(fdt, subnode, "clock-frequency",
 					    &ret);
 			if (cuint == NULL) {
@@ -68,7 +70,8 @@ int fdt_osc_read_freq(const char *name, uint32_t *freq)
 		}
 	}
 
-	/* Oscillator not found, freq=0 */
+exit:
+	/* Oscillator not found or disabled, freq=0 */
 	*freq = 0;
 	return 0;
 }
@@ -170,11 +173,11 @@ uint32_t fdt_osc_read_uint32_default(enum stm32mp_osc_id osc_id,
  ******************************************************************************/
 int fdt_rcc_enable_it(const char *name)
 {
-	void *fdt;
+	int node = fdt_get_rcc_node();
 
-	if (fdt_get_address(&fdt) == 0) {
-		return -ENOENT;
+	if (node < 0) {
+		return -ENODEV;
 	}
 
-	return stm32_gic_enable_spi(fdt_get_rcc_node(fdt), name);
+	return stm32_gic_enable_spi(node, name);
 }

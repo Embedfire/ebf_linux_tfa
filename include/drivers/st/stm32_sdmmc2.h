@@ -9,6 +9,7 @@
 
 #include <mmc.h>
 #include <stdbool.h>
+#include <stm32mp_regulator.h>
 
 struct stm32_sdmmc2_params {
 	uintptr_t		reg_base;
@@ -23,6 +24,7 @@ struct stm32_sdmmc2_params {
 	unsigned int		reset_id;
 	unsigned int		max_freq;
 	bool			use_dma;
+	struct stm32mp_regulator vmmc_regu;
 };
 
 unsigned long long stm32_sdmmc2_mmc_get_device_size(void);

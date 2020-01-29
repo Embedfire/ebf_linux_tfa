@@ -1,11 +1,10 @@
 /*
- * Copyright (c) 2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <assert.h>
-#include <boot_api.h>
 #include <debug.h>
 #include <errno.h>
 #include <io_driver.h>
@@ -13,7 +12,6 @@
 #include <io_storage.h>
 #include <platform.h>
 #include <platform_def.h>
-#include <stm32mp_auth.h>
 #include <stdint.h>
 #include <string.h>
 #include <utils.h>

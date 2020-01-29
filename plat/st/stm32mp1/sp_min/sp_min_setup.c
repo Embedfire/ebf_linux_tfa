@@ -33,6 +33,7 @@
 #include <stm32mp1_power_config.h>
 #include <stm32mp1_private.h>
 #include <stm32mp1_shared_resources.h>
+#include <stpmic1.h>
 #include <string.h>
 #include <tzc400.h>
 #include <xlat_tables_v2.h>
@@ -95,6 +96,29 @@ static void configure_wakeup_interrupt(void)
 	}
 
 	plat_ic_set_interrupt_priority(irq_num, STM32MP1_IRQ_RCC_SEC_PRIO);
+}
+
+static void initialize_pll1_settings(void)
+{
+	uint32_t vddcore_voltage = 0U;
+	int ret;
+
+	if (stm32_are_pll1_settings_valid_in_context()) {
+		return;
+	}
+
+	if (dt_pmic_status() > 0) {
+		ret = stpmic1_regulator_voltage_get("buck1");
+		if (ret < 0) {
+			panic();
+		}
+
+		vddcore_voltage = (uint32_t)ret;
+	}
+
+	if (stm32mp1_clk_compute_all_pll1_settings(vddcore_voltage) != 0) {
+		panic();
+	}
 }
 
 /*******************************************************************************
@@ -298,6 +322,8 @@ void sp_min_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 	if (dt_pmic_status() > 0) {
 		initialize_pmic();
 	}
+
+	initialize_pll1_settings();
 
 	stm32mp1_init_lp_states();
 }

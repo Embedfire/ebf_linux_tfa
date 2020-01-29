@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2016-2020, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -94,6 +94,7 @@ static enum bsec_ssp_status bsec_check_ssp(uint32_t otp, uint32_t update)
 	return BSEC_NO_SSP;
 }
 
+#if STM32MP_USB || STM32MP_UART_PROGRAMMER
 static uint32_t bsec_read_all_bsec(struct otp_exchange *exchange)
 {
 	uint32_t i;
@@ -382,6 +383,7 @@ static uint32_t bsec_write_all_bsec(struct otp_exchange *exchange,
 
 	return BSEC_OK;
 }
+#endif /* STM32MP_USB || STM32MP_UART_PROGRAMMER */
 
 uint32_t bsec_main(uint32_t x1, uint32_t x2, uint32_t x3,
 		   uint32_t *ret_otp_value)
@@ -391,14 +393,16 @@ uint32_t bsec_main(uint32_t x1, uint32_t x2, uint32_t x3,
 
 	if ((x1 != STM32_SMC_READ_ALL) && (x1 != STM32_SMC_WRITE_ALL) &&
 	    (bsec_check_nsec_access_rights(x2) != BSEC_OK)) {
-		return BSEC_ERROR;
+		return STM32_SMC_INVALID_PARAMS;
 	}
 
+#if STM32MP_USB || STM32MP_UART_PROGRAMMER
 	if (((x1 == STM32_SMC_READ_ALL) || (x1 == STM32_SMC_WRITE_ALL)) &&
 	    (!ddr_is_nonsecured_area((uintptr_t)x2,
 				     sizeof(struct otp_exchange)))) {
-		return BSEC_ERROR;
+		return STM32_SMC_INVALID_PARAMS;
 	}
+#endif
 
 	switch (x1) {
 	case STM32_SMC_READ_SHADOW:
@@ -443,6 +447,7 @@ uint32_t bsec_main(uint32_t x1, uint32_t x2, uint32_t x3,
 
 		result = bsec_write_otp(tmp_data, x2);
 		break;
+#if STM32MP_USB || STM32MP_UART_PROGRAMMER
 	case STM32_SMC_READ_ALL:
 		result = bsec_read_all_bsec((struct otp_exchange *)x2);
 		break;
@@ -450,10 +455,13 @@ uint32_t bsec_main(uint32_t x1, uint32_t x2, uint32_t x3,
 		result = bsec_write_all_bsec((struct otp_exchange *)x2,
 					     ret_otp_value);
 		break;
-	default:
-		result = BSEC_ERROR;
+#endif
+	case STM32_SMC_WRLOCK_OTP:
+		result = bsec_permanent_lock_otp(x2);
 		break;
+	default:
+		return STM32_SMC_INVALID_PARAMS;
 	}
 
-	return result;
+	return (result == BSEC_OK) ? STM32_SMC_OK : STM32_SMC_FAILED;
 }

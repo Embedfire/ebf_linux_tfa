@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -171,6 +171,9 @@ uint32_t bsec_get_base(void);
 
 uint32_t bsec_set_config(struct bsec_config *cfg);
 uint32_t bsec_get_config(struct bsec_config *cfg);
+
+uint32_t bsec_find_otp_name_in_dt(const char *name, uint32_t *otp,
+				  uint32_t *otp_len);
 
 uint32_t bsec_shadow_register(uint32_t otp);
 uint32_t bsec_read_otp(uint32_t *val, uint32_t otp);

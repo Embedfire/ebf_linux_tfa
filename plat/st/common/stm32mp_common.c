@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -51,9 +51,9 @@ uintptr_t stm32mp_get_boot_ctx_address(void)
  */
 #pragma weak stm32mp_is_single_core
 
-int stm32mp_is_single_core(void)
+bool stm32mp_is_single_core(void)
 {
-	return 0;
+	return false;
 }
 
 uintptr_t stm32mp_ddrctrl_base(void)
@@ -100,7 +100,7 @@ uintptr_t stm32mp_rcc_base(void)
 	static uintptr_t rcc_base;
 
 	if (rcc_base == 0) {
-		rcc_base = fdt_rcc_read_addr();
+		rcc_base = dt_get_rcc_base();
 
 		assert(rcc_base == RCC_BASE);
 	}

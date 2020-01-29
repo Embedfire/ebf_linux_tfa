@@ -30,6 +30,7 @@
 	pinctrl-0 = <&i2c4_pins_a>;
 	i2c-scl-rising-time-ns = <185>;
 	i2c-scl-falling-time-ns = <20>;
+	clock-frequency = <400000>;
 	status = "okay";
 
 	pmic: stpmic@33 {
@@ -39,10 +40,7 @@
 		interrupt-controller;
 		#interrupt-cells = <2>;
 		status = "okay";
-
-		st,main-control-register = <0x04>;
-		st,vin-control-register = <0xc0>;
-		st,usb-control-register = <0x20>;
+		wakeup-source;
 
 		regulators {
 			compatible = "st,stpmic1-regulators";
@@ -288,12 +286,6 @@
 		CLK_LPTIM45_LSE
 	>;
 
-	/* VCO = 1300.0 MHz => P = 650 (CPU) */
-	pll1: st,pll@0 {
-		cfg = < 2 80 0 0 0 PQR(1,0,0) >;
-		frac = < 0x800 >;
-	};
-
 	/* VCO = 1066.0 MHz => P = 266 (AXI), Q = 533 (GPU), R = 533 (DDR) */
 	pll2: st,pll@1 {
 		cfg = < 2 65 1 0 0 PQR(1,1,1) >;
@@ -316,8 +308,7 @@
 &bsec {
 	board_id: board_id@ec {
 		reg = <0xec 0x4>;
-		status = "okay";
-		secure-status = "okay";
+		st,non-secure-otp;
 	};
 };
 
@@ -335,6 +326,24 @@
 
 &iwdg2 {
 	secure-status = "okay";
+};
+
+&nvmem_layout {
+	nvmem-cells =<&part_number_otp>,
+		      <&monotonic_otp>,
+		      <&nand_otp>,
+		      <&uid_otp>,
+		      <&package_otp>,
+		      <&hw2_otp>,
+		      <&board_id>;
+
+	nvmem-cell-names = "part_number_otp",
+			   "monotonic_otp",
+			   "nand_otp",
+			   "uid_otp",
+			   "package_otp",
+			   "hw2_otp",
+			   "board_id";
 };
 
 &pwr {

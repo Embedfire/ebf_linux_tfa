@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -24,6 +24,7 @@ static void init_tzc400(void)
 	unsigned long long region_base, region_top;
 	unsigned long long ddr_base = STM32MP_DDR_BASE;
 	unsigned long long ddr_size = (unsigned long long)dt_get_ddr_size();
+	unsigned long long ddr_top = ddr_base + (ddr_size - 1U);
 
 	tzc400_init(STM32MP1_TZC_BASE);
 
@@ -35,7 +36,7 @@ static void init_tzc400(void)
 	 * same configuration to all filters in the TZC.
 	 */
 	region_base = ddr_base;
-	region_top = ddr_base + (ddr_size - STM32MP_DDR_S_SIZE - 1U);
+	region_top = ddr_top - STM32MP_DDR_S_SIZE - STM32MP_DDR_SHMEM_SIZE;
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 1,
 			region_base,
 			region_top,
@@ -53,8 +54,8 @@ static void init_tzc400(void)
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_DAP_ID));
 
 	/* Region 2 set to cover all secure DRAM. */
-	region_base = ddr_base + (ddr_size - STM32MP_DDR_S_SIZE);
-	region_top = ddr_base + (ddr_size - STM32MP_DDR_SHMEM_SIZE - 1U);
+	region_base = region_top + 1U;
+	region_top = ddr_top - STM32MP_DDR_SHMEM_SIZE;
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 2,
 				region_base,
 				region_top,
@@ -62,8 +63,8 @@ static void init_tzc400(void)
 				0);
 
 	/* Region 3 set to cover non-secure shared memory DRAM. */
-	region_base = ddr_base + (ddr_size - STM32MP_DDR_SHMEM_SIZE);
-	region_top = ddr_base + (ddr_size - 1U);
+	region_base = region_top + 1U;
+	region_top = ddr_top;
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 3,
 			region_base,
 			region_top,
@@ -85,7 +86,7 @@ static void init_tzc400(void)
 	 * same configuration to all filters in the TZC.
 	 */
 	region_base = ddr_base;
-	region_top = ddr_base + (ddr_size - 1U);
+	region_top = ddr_top;
 	tzc400_configure_region(STM32MP1_FILTER_BIT_ALL, 1,
 			region_base,
 			region_top,
@@ -103,8 +104,11 @@ static void init_tzc400(void)
 			TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_DAP_ID));
 #endif
 
-	/* Raise an exception if a NS device tries to access secure memory */
-	tzc400_set_action(TZC_ACTION_ERR);
+	/*
+	 * Raise an interrupt (secure FIQ) if a NS device tries to access
+	 * secure memory
+	 */
+	tzc400_set_action(TZC_ACTION_INT);
 
 	tzc400_enable_filters();
 }

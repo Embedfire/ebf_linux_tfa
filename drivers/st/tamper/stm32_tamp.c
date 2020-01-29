@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2018-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -12,8 +12,6 @@
 #include <stm32_rng.h>
 #include <stm32_rtc.h>
 #include <stm32_tamp.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
 
 #define DT_TAMP_COMPAT			"st,stm32-tamp"
 /* STM32 Registers */

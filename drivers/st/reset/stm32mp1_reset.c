@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2018-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -10,7 +10,6 @@
 #include <limits.h>
 #include <mmio.h>
 #include <platform_def.h>
-#include <stm32mp_common.h>
 #include <stm32mp_reset.h>
 #include <utils_def.h>
 

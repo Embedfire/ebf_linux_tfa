@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2018-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -12,8 +12,16 @@
 
 #include <dt-bindings/clock/stm32mp1-clks.h>
 
+#define PLL1_SETTINGS_VALID_ID	U(0x504C4C31) /* "PLL1" */
+
 int stm32mp1_clk_probe(void);
-int stm32mp1_clk_init(void);
+int stm32mp1_clk_init(uint32_t pll1_freq_mhz);
+
+int stm32mp1_clk_compute_all_pll1_settings(uint32_t buck1_voltage);
+void stm32mp1_clk_lp_save_opp_pll1_settings(uint8_t *data, size_t size);
+void stm32mp1_clk_lp_load_opp_pll1_settings(uint8_t *data, size_t size);
+
+int stm32mp1_clk_get_maxfreq_opp(uint32_t *freq_mhz, uint32_t *voltage_mv);
 
 bool stm32mp1_rcc_is_secure(void);
 bool stm32mp1_rcc_is_mckprot(void);
@@ -47,15 +55,21 @@ unsigned int stm32mp1_clk_get_refcount(unsigned long id);
 unsigned long stm32mp_clk_get_rate(unsigned long id);
 unsigned long stm32mp_clk_timer_get_rate(unsigned long id);
 
-void stm32mp1_stgen_increment(unsigned long long offset_in_ms);
-
 bool stm32mp1_rtc_get_read_twice(void);
 
 /* SMP protection on RCC registers access */
 void stm32mp1_clk_rcc_regs_lock(void);
 void stm32mp1_clk_rcc_regs_unlock(void);
 
+void stm32mp1_stgen_restore_counter(unsigned long long value,
+				    unsigned long long offset_in_ms);
+unsigned long long stm32mp1_stgen_get_counter(void);
+
 unsigned long stm32mp1_clk_rcc2id(unsigned int offset, unsigned int bit);
+
+int stm32mp1_round_opp_khz(uint32_t *freq_khz);
+int stm32mp1_set_opp_khz(uint32_t freq_khz);
+
 #if defined(IMAGE_BL32)
 void stm32mp1_clk_mpu_suspend(void);
 void stm32mp1_clk_mpu_resume(void);

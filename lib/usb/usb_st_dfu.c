@@ -759,7 +759,7 @@ static uint8_t usb_dfu_setup(usb_handle_t *pdev, usb_setup_req_t *req)
 				break;
 
 			case DFU_DETACH:
-				INFO("Receive DFU detach\n");
+				usb_dfu_detach(pdev, req);
 				break;
 
 			default:

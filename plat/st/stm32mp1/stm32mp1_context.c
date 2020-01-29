@@ -28,11 +28,30 @@
 #define TRAINING_AREA_SIZE		64
 
 #ifdef AARCH32_SP_OPTEE
-/* OPTEE_MAILBOX_MAGIC relates to struct backup_data_s as defined */
-#define OPTEE_MAILBOX_MAGIC_V1		0x01
-#define OPTEE_MAILBOX_MAGIC		((OPTEE_MAILBOX_MAGIC_V1 << 16) + \
-						TRAINING_AREA_SIZE)
+/*
+ * OPTEE_MAILBOX_MAGIC relates to struct backup_data_s as defined
+ *
+ * OPTEE_MAILBOX_MAGIC_V1:
+ * Context provides magic, resume entry, zq0cr0 zdata and DDR training buffer.
+ *
+ * OPTEE_MAILBOX_MAGIC_V2:
+ * Context provides magic, resume entry, zq0cr0 zdata, DDR training buffer
+ * and PLL1 dual OPP settings structure (86 bytes).
+ */
+#define OPTEE_MAILBOX_MAGIC_V1		(0x0001 << 16)
+#define OPTEE_MAILBOX_MAGIC_V2		(0x0002 << 16)
+#define OPTEE_MAILBOX_MAGIC		(OPTEE_MAILBOX_MAGIC_V2 | \
+					 TRAINING_AREA_SIZE)
+
+#if (PLAT_MAX_OPP_NB != 2) || (PLAT_MAX_PLLCFG_NB != 6)
+#error OPTEE_MAILBOX_MAGIC_V1 does not support expected PLL1 settings
 #endif
+#endif
+
+/* pll_settings structure size definitions (reference to clock driver) */
+#define PLL1_SETTINGS_SIZE		(((PLAT_MAX_OPP_NB * \
+					  (PLAT_MAX_PLLCFG_NB + 3)) + 1) * \
+					 sizeof(uint32_t))
 
 struct backup_data_s {
 #ifdef AARCH32_SP_OPTEE
@@ -40,12 +59,15 @@ struct backup_data_s {
 	uint32_t core0_resume_hint;
 	uint32_t zq0cr0_zdata;
 	uint8_t ddr_training_backup[TRAINING_AREA_SIZE];
+	uint8_t pll1_settings[PLL1_SETTINGS_SIZE];
 #else
 	smc_ctx_t saved_smc_context[PLATFORM_CORE_COUNT];
 	cpu_context_t saved_cpu_context[PLATFORM_CORE_COUNT];
 	uint32_t zq0cr0_zdata;
 	struct stm32_rtc_calendar rtc;
 	uint8_t ddr_training_backup[TRAINING_AREA_SIZE];
+	uint8_t pll1_settings[PLL1_SETTINGS_SIZE];
+	unsigned long long stgen;
 #endif
 };
 
@@ -106,6 +128,10 @@ int stm32_save_context(uint32_t zq0cr0_zdata)
 	backup_data->zq0cr0_zdata = zq0cr0_zdata;
 
 	stm32_rtc_get_calendar(&backup_data->rtc);
+	backup_data->stgen = stm32mp1_stgen_get_counter();
+
+	stm32mp1_clk_lp_save_opp_pll1_settings(backup_data->pll1_settings,
+					sizeof(backup_data->pll1_settings));
 
 	stm32mp_clk_disable(BKPSRAM);
 
@@ -137,15 +163,34 @@ int stm32_restore_context(void)
 	memcpy(cpu_context, backup_data->saved_cpu_context,
 	       sizeof(cpu_context_t) * PLATFORM_CORE_COUNT);
 
-	/* update STGEN counter with standby mode length */
+	/* Restore STGEN counter with standby mode length */
 	stm32_rtc_get_calendar(&current_calendar);
 	stdby_time_in_ms = stm32_rtc_diff_calendar(&current_calendar,
 						   &backup_data->rtc);
-	stm32mp1_stgen_increment(stdby_time_in_ms);
+	stm32mp1_stgen_restore_counter(backup_data->stgen, stdby_time_in_ms);
+
+	stm32mp1_clk_lp_load_opp_pll1_settings(backup_data->pll1_settings,
+					sizeof(backup_data->pll1_settings));
 
 	stm32mp_clk_disable(BKPSRAM);
 
 	return 0;
+}
+
+unsigned long long stm32_get_stgen_from_context(void)
+{
+	struct backup_data_s *backup_data;
+	unsigned long long stgen_cnt;
+
+	stm32mp_clk_enable(BKPSRAM);
+
+	backup_data = (struct backup_data_s *)STM32MP_BACKUP_RAM_BASE;
+
+	stgen_cnt = backup_data->stgen;
+
+	stm32mp_clk_disable(BKPSRAM);
+
+	return stgen_cnt;
 }
 #endif /*AARCH32_SP_OPTEE*/
 
@@ -164,6 +209,40 @@ uint32_t stm32_get_zdata_from_context(void)
 	stm32mp_clk_disable(BKPSRAM);
 
 	return zdata;
+}
+
+void stm32_get_pll1_settings_from_context(void)
+{
+	struct backup_data_s *backup_data;
+	uint8_t *data;
+
+	stm32mp_clk_enable(BKPSRAM);
+
+	backup_data = (struct backup_data_s *)STM32MP_BACKUP_RAM_BASE;
+
+	data = (uint8_t *)backup_data->pll1_settings;
+	stm32mp1_clk_lp_load_opp_pll1_settings(data,
+					sizeof(backup_data->pll1_settings));
+
+	stm32mp_clk_disable(BKPSRAM);
+}
+
+bool stm32_are_pll1_settings_valid_in_context(void)
+{
+	struct backup_data_s *backup_data;
+	uint32_t *data;
+	bool is_valid;
+
+	stm32mp_clk_enable(BKPSRAM);
+
+	backup_data = (struct backup_data_s *)STM32MP_BACKUP_RAM_BASE;
+	data = (uint32_t *)backup_data->pll1_settings;
+
+	is_valid = (data[0] == PLL1_SETTINGS_VALID_ID);
+
+	stm32mp_clk_disable(BKPSRAM);
+
+	return is_valid;
 }
 
 int stm32_save_boot_interface(uint32_t interface, uint32_t instance)

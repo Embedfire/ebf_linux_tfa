@@ -1,13 +1,12 @@
 /*
- * Copyright (c) 2017, STMicroelectronics - All Rights Reserved
- * Copyright (c) 2017, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2017-2019, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <arch_helpers.h>
 #include <assert.h>
-#include <boot_api.h>
 #include <debug.h>
 #include <io_driver.h>
 #include <io_programmer.h>
@@ -16,10 +15,7 @@
 #include <io_storage.h>
 #include <platform_def.h>
 #include <stm32_iwdg.h>
-#include <stm32mp_auth.h>
-#include <stm32mp_dt.h>
 #include <string.h>
-#include <usb_ctx.h>
 #include <usb_st_dfu.h>
 
 static uint8_t first_usb_buffer[USB_DFU_MAX_XFER_SIZE + 1] __aligned(4);

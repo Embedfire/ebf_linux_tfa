@@ -16,13 +16,11 @@
 #include <limits.h>
 #include <mmio.h>
 #include <platform.h>
+#include <platform_def.h>
 #include <spinlock.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stm32mp_clkfunc.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
-#include <stm32mp1_private.h>
 #include <stm32mp1_rcc.h>
 #include <stm32_timer.h>
 #include <utils_def.h>

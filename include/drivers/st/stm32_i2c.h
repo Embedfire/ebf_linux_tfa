@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2016-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
  */
@@ -125,12 +125,6 @@
 #define I2C_ICR_TIMOUTCF		BIT(12)
 #define I2C_ICR_ALERTCF			BIT(13)
 
-enum i2c_speed_e {
-	I2C_SPEED_STANDARD,	/* 100 kHz */
-	I2C_SPEED_FAST,		/* 400 kHz */
-	I2C_SPEED_FAST_PLUS,	/* 1 MHz   */
-};
-
 #define STANDARD_RATE				100000
 #define FAST_RATE				400000
 #define FAST_PLUS_RATE				1000000
@@ -195,12 +189,7 @@ struct stm32_i2c_init_s {
 					 * time in nanoseconds.
 					 */
 
-	enum i2c_speed_e speed_mode;	/*
-					 * Specifies the I2C clock source
-					 * frequency mode.
-					 * This parameter can be a value of @ref
-					 * i2c_speed_mode_e.
-					 */
+	uint32_t bus_rate;		/* Specifies the I2C clock frequency */
 
 	int analog_filter;		/*
 					 * Specifies if the I2C analog noise
@@ -252,6 +241,8 @@ struct i2c_handle_s {
 	enum i2c_state_e i2c_state;		/* Communication state    */
 	enum i2c_mode_e i2c_mode;		/* Communication mode     */
 	uint32_t i2c_err;			/* Error code             */
+	uint32_t saved_timing;			/* Saved timing value     */
+	uint32_t saved_frequency;		/* Saved frequency value  */
 };
 
 #define I2C_ADDRESSINGMODE_7BIT			0x00000001U
@@ -313,8 +304,7 @@ struct i2c_handle_s {
 #define STM32_I2C_ANALOG_FILTER_DELAY_MAX	260	/* ns */
 #define STM32_I2C_DIGITAL_FILTER_MAX		16
 
-int stm32_i2c_get_setup_from_fdt(void *fdt, int node,
-				 struct stm32_i2c_init_s *init);
+int stm32_i2c_get_setup_from_fdt(int node, struct stm32_i2c_init_s *init);
 int stm32_i2c_init(struct i2c_handle_s *hi2c,
 		   struct stm32_i2c_init_s *init_data);
 int stm32_i2c_mem_write(struct i2c_handle_s *hi2c, uint16_t dev_addr,

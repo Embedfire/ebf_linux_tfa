@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2015-2017, ARM Limited and Contributors. All rights reserved.
- * Copyright (c) 2017-2018, STMicroelectronics
+ * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -15,8 +15,6 @@
 #include <mmio.h>
 #include <platform_def.h>
 #include <stdint.h>
-#include <stm32mp_common.h>
-#include <stm32mp_dt.h>
 #include <utils_def.h>
 
 /* Device Tree related definitions */

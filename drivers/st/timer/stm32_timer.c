@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2018-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -12,7 +12,6 @@
 #include <platform_def.h>
 #include <stdbool.h>
 #include <stm32_timer.h>
-#include <stm32mp_dt.h>
 
 #define TIM_CR1			0x00U		/* Control Register 1      */
 #define TIM_CR2			0x04U		/* Control Register 2      */

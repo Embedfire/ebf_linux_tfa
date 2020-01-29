@@ -10,6 +10,9 @@
  * fixes the limitation. Anyway, this source code identifies the Soc revision
  * and is only executed if it corresponds, so it can be kept on other
  * revisions without any consequence.
+ * The revisions that need the workaround have ID values:
+ * - 0x2000X500
+ * - 0x2001X500
  ****************************************************************************/
 
 /*****************************************************************************
@@ -17,6 +20,8 @@
  * standard macros and instructions. It could then be easily back-ported to
  * other pieces of software.
  ****************************************************************************/
+
+#include <asm_macros.S>
 
 #define BIT_(nr)			((1) << (nr))
 
@@ -27,7 +32,7 @@
 
 #define DBGMCU_BASE			0x50081000
 #define DBGMCU_IDC			0x00
-#define DBGMCU_IDC_REV_ID_DEV_ID_MSK	0xFFFF0FFF
+#define DBGMCU_IDC_REV_ID_DEV_ID_MSK	0xFFFE0FFF
 #define DBGMCU_IDC_REV_ID_DEV_ID_VALUE	0x20000500
 
 #define RCC_BASE			0x50000000
@@ -53,7 +58,7 @@
 	.globl	plat_dbg_attach_loop
 
 
-plat_dbg_attach_loop:
+func plat_dbg_attach_loop
 	/*
 	 * This function is the first call of FSBL_ENTRYPOINT.
 	 * Boot rom parameters are stored in r0..r3, so we mustn't use them
@@ -225,3 +230,4 @@ msb_incr:
 	bmi	loop
 func_exit:
 	bx	lr
+endfunc plat_dbg_attach_loop

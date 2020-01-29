@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2018-2019, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -13,7 +13,6 @@
 #include <platform_def.h>
 #include <stdbool.h>
 #include <stm32_rng.h>
-#include <stm32mp_dt.h>
 #include <stm32mp_reset.h>
 
 #define DT_RNG_COMPAT		"st,stm32-rng"

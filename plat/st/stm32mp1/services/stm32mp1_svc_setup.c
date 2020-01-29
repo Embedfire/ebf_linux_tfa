@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2014-2018, STMicroelectronics - All Rights Reserved
- * Copyright (c) 2014, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2014-2020, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -74,6 +73,11 @@ static uintptr_t stm32mp1_svc_smc_handler(uint32_t smc_fid, u_register_t x1,
 		ret1 = rcc_cal_scv_handler(x1);
 		break;
 
+	case STM32_SMC_RCC_OPP:
+		ret1 = rcc_opp_scv_handler(x1, x2, &ret2);
+		ret2_enabled = true;
+		break;
+
 	case STM32_SMC_PWR:
 		ret1 = pwr_scv_handler(x1, x2, x3);
 		break;
@@ -88,7 +92,7 @@ static uintptr_t stm32mp1_svc_smc_handler(uint32_t smc_fid, u_register_t x1,
 
 	default:
 		WARN("Unimplemented STM32MP1 Service Call: 0x%x\n", smc_fid);
-		ret1 = SMC_UNK;
+		ret1 = STM32_SMC_NOT_SUPPORTED;
 		break;
 	}
 

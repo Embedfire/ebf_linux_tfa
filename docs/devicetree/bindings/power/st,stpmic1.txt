@@ -45,43 +45,6 @@ Required parent device properties:
 	IT_TWARN_R=30
 	IT_TWARN_F=31
 
-Optional parent device properties:
-- st,main-control-register:
-	-bit 1: Power cycling will be performed on turn OFF condition
-	-bit 2: PWRCTRL is functional
-	-bit 3: PWRCTRL active high
-- st,pads-pull-register:
-	-bit 1: WAKEUP pull down is not active
-	-bit 2: PWRCTRL pull up is active
-	-bit 3: PWRCTRL pull down is active
-	-bit 4: WAKEUP detector is disabled
-- st,vin-control-register:
-	-bit 0: VINLOW monitoring is enabled
-	-bit [1...3]: VINLOW rising threshold
-		000 VINOK_f + 50mV
-		001 VINOK_f + 100mV
-		010 VINOK_f + 150mV
-		011 VINOK_f + 200mV
-		100 VINOK_f + 250mV
-		101 VINOK_f + 300mV
-		110 VINOK_f + 350mV
-		111 VINOK_f + 400mV
-	-bit [4...5]: VINLOW hyst
-		00 100mV
-		01 200mV
-		10 300mV
-		11 400mV
-	-bit 6: SW_OUT detector is disabled
-	-bit 7: SW_IN detector is enabled.
-- st,usb-control-register:
-	-bit 3: SW_OUT current limit
-		0: 600mA
-		1: 1.1A
-	-bit 4: VBUS_OTG discharge is enabled
-	-bit 5: SW_OUT discharge is enabled
-	-bit 6: VBUS_OTG detection is enabled
-	-bit 7: BOOST_OVP is disabled
-
 STPMIC1 consists in a varied group of sub-devices.
 Each sub-device binding is be described in own documentation file.
 
@@ -98,7 +61,6 @@ pmic: pmic@33 {
 	reg = <0x33>;
 	interrupt-parent = <&gpioa>;
 	interrupts = <0 2>;
-	st,main-control-register=<0x0c>;
 	interrupt-controller;
 	#interrupt-cells = <2>;
 
